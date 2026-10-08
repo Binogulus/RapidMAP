@@ -39,6 +39,32 @@
 
 </div>
 
+### 📸 Visual Walkthrough
+
+#### 1. Seamless Library Integration
+<p align="center">
+  <img src="docs/screenshots/01-library-map-switcher.png" alt="Library Display Mode Switcher with Map View" width="100%">
+</p>
+<p align="center"><em>Native integration into the Library view mode switcher alongside Grid, List, and Culling.</em></p>
+
+#### 2. Geographic Macro View & Photographic Clusters
+<p align="center">
+  <img src="docs/screenshots/02-macro-clusters-overview.png" alt="Geographic Overview with Photo-Stack Clusters" width="100%">
+</p>
+<p align="center"><em>Macro overview with dynamic photo-stack clusters, item count badges, and dedicated map controls.</em></p>
+
+#### 3. Regional Progressive Zoom & Dynamic Splitting
+<p align="center">
+  <img src="docs/screenshots/03-regional-zoom-clusters.png" alt="Regional Zoom and Marker Clustering" width="100%">
+</p>
+<p align="center"><em>Progressive cluster splitting and high-resolution photo pins tagged with format badges (ARW, DNG, etc.).</em></p>
+
+#### 4. Close-Up Inspection & Full Metadata Preview Card
+<p align="center">
+  <img src="docs/screenshots/04-preview-popup-metadata.png" alt="High-Res Popup Preview with Metadata" width="100%">
+</p>
+<p align="center"><em>Enlarged 480×260px preview card displaying image name, date/time, exact GPS coordinates, and synchronized metadata.</em></p>
+
 ### ✨ Key Features of the RapidMAP Module
 
 * **Natively Integrated in the Library Panel**: Toggle between Grid, List, Culling, and Map with a single click. Single-click selects and synchronizes with the filmstrip and sidebars; double-click directly opens the photo in the Adjustments editor; right-click opens the native context menu.
