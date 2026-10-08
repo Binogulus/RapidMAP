@@ -1165,6 +1165,23 @@
       "communityPresets": "Community Presets",
       "goHome": "Go to Home",
       "importImages": "Import Images"
+    },
+    "viewMode": {
+      "grid": "Grid View",
+      "list": "List View",
+      "culling": "Culling View",
+      "map": "Map View"
+    },
+    "map": {
+      "badge": "{{count}} / {{total}} with GPS coordinates",
+      "noGpsTitle": "No GPS coordinates",
+      "noGpsDesc": "None of the photos in this folder contain geographic information in EXIF metadata.",
+      "fitBounds": "Fit all photos in view",
+      "cardsActive": "Photo thumbnail cards active (click for compact pins)",
+      "pinsActive": "Compact pins active (click for photo cards)",
+      "styleSelector": "Select map style",
+      "mapStyle": "Map Style",
+      "doubleClickHint": "Double click to open in Adjustments mode"
     }
   },
   "masks": {

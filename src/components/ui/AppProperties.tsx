@@ -415,6 +415,7 @@ export enum LibraryDisplayMode {
   Grid = 'grid',
   Cull = 'cull',
   List = 'list',
+  Map = 'map',
 }
 
 export enum ThumbnailSize {

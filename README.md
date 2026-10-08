@@ -17,9 +17,64 @@
 
 </div>
 
-# RapidRAW
+# RapidRAW + RapidMAP Edition
 
-> A beautiful, non-destructive, and GPU-accelerated RAW image editor built with performance in mind.
+> A beautiful, non-destructive, and GPU-accelerated RAW image editor with native photographic map exploration.
+
+**RapidMAP** is an interactive, photographic map view seamlessly integrated into **RapidRAW 1.6.5** for geospatial exploration, clustering, and inspection of your photo library.
+
+---
+
+## 🗺️ RapidMAP: Native Photographic Map Explorer
+
+<div align="center">
+
+| 📍 **Native Library Integration** | 📸 **Photographic Clusters** | 🛰️ **3 Switchable Basemaps** |
+| :---: | :---: | :---: |
+| 4th mode alongside Grid, List, and Culling | Realistic photo-stack cards with item count badges | Dark OSM (custom CSS theme), Standard OSM & Esri Satellite |
+
+| 🖼️ **High-Res Previews** | ⚡ **Zero-Cost Thumbnails** | 🧭 **Phase 2: Geotagging** |
+| :---: | :---: | :---: |
+| 96×96px pins & 480×260px metadata popups | Cached preview reuse & O(1) reactive refresh | Drag & drop GPS placement with .xmp sidecars |
+
+</div>
+
+### ✨ Key Features of the RapidMAP Module
+
+* **Natively Integrated in the Library Panel**: Toggle between Grid, List, Culling, and Map with a single click. Single-click selects and synchronizes with the filmstrip and sidebars; double-click directly opens the photo in the Adjustments editor; right-click opens the native context menu.
+* **Photographic Clusters (Stacked Cards)**: Grouped markers are presented as physical photo stacks with subtle tilt angles (`-3°` and `+4°`), accent borders matching RapidRAW's sleek dark theme, and compact item count badges (`15`, `42`, `200+`).
+* **High-Resolution Pins & Previews**: 
+  * 96×96px thumbnail pins with directional GPS anchor arrows (`96×106px`).
+  * Instant spiderfication for co-located shots ($\le 15$ meters) preventing overlap.
+  * 480×260px popup cards showcasing image metadata, EXIF details, capture date/time, and exact GPS coordinates.
+* **Zero-Cost Thumbnail Performance**:
+  * Prioritizes existing session-cached thumbnails with zero disk or Rust calls.
+  * Lazy-loads only 1 representative thumbnail per visible cluster on demand.
+  * O(1) reactive cluster updates via `refreshClusters()` as soon as previews resolve.
+* **3 Switchable Basemaps with Preference Persistence**:
+  * **Dark OSM**: High-contrast, inverted CSS fotoscuro filter tailored for photo editing dark rooms.
+  * **OpenStreetMap**: Standard clean street mapping.
+  * **Satellite (Esri)**: High-resolution satellite imagery for wilderness, landscape, and outdoor photography.
+  * Persistent selection saved across sessions via `localStorage`.
+* **Safe Coordinate Filtering**: Automatic rejection of "Null Island" coordinates ($< 0.0001$) to prevent misplaced ocean markers when GPS locks are incomplete.
+* **Multi-OS Automated Artifacts**: Dedicated GitHub Actions workflow generating Linux (`.AppImage`, `.deb`), Windows 11 (`.exe` NSIS, `.msi`), and macOS Apple Silicon (`.dmg`).
+
+---
+
+### 🚀 Roadmap & Phase 2: Interactive Geotagging
+
+The next milestone for RapidMAP introduces **drag-and-drop geotagging**:
+1. **Unlocated Photos Dock**: A collapsible tray showing photos without GPS metadata.
+2. **Interactive Placement**: Drag photos directly onto any map location or right-click to place.
+3. **Non-destructive Metadata Sync**: Writes GPS tags to `.rrdata` sidecars and synchronizes with standard `.xmp` sidecar files without ever modifying immutable RAW binaries.
+
+---
+
+### 🤝 Upstream Project
+
+RapidRAW is created and maintained by **[Timon Käch (@CyberTimon)](https://github.com/CyberTimon/RapidRAW)**. This fork is developed by **[Binogulus](https://github.com/Binogulus)** to propose and contribute geographic map exploration upstream.
+
+---
 
 RapidRAW is a modern, high-performance alternative to Adobe Lightroom®. It delivers a simple, beautiful editing experience in a lightweight package (under 20MB) for Windows, macOS, Linux, and Android.
 

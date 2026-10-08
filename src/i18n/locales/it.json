@@ -1191,6 +1191,23 @@
       "communityPresets": "Predefiniti della Community",
       "goHome": "Torna alla Home page",
       "importImages": "Importa Immagini"
+    },
+    "viewMode": {
+      "grid": "Vista griglia",
+      "list": "Vista elenco",
+      "culling": "Vista culling",
+      "map": "Vista mappa"
+    },
+    "map": {
+      "badge": "{{count}} / {{total}} con coordinate GPS",
+      "noGpsTitle": "Nessuna coordinata GPS",
+      "noGpsDesc": "Nessuna delle foto in questa cartella contiene informazioni geografiche nei metadati EXIF.",
+      "fitBounds": "Inquadra tutte le foto",
+      "cardsActive": "Miniature fotografiche attive (clicca per segnaposto compatti)",
+      "pinsActive": "Segnaposto compatti (clicca per miniature)",
+      "styleSelector": "Seleziona stile mappa",
+      "mapStyle": "Stile Mappa",
+      "doubleClickHint": "Doppio click per aprire in modalità Adjustments"
     }
   },
   "masks": {
