@@ -17,11 +17,11 @@
 
 </div>
 
-# RapidRAW + RapidMAP Edition
+# RapidRAW: Map View Feature Proposal
 
-> A beautiful, non-destructive, and GPU-accelerated RAW image editor with native photographic map exploration.
+> An interactive, photographic map view proposal for RapidRAW to enable geospatial exploration, clustering, and inspection of geotagged photo libraries.
 
-**RapidMAP** is an interactive, photographic map view seamlessly integrated into **RapidRAW 1.6.5** for geospatial exploration, clustering, and inspection of your photo library.
+This repository serves as a public development and staging area maintained by **[Binogulus](https://github.com/Binogulus)** to design, test, and propose the native Map View module upstream to **[RapidRAW](https://github.com/CyberTimon/RapidRAW)** (created by [Timon Käch / @CyberTimon](https://github.com/CyberTimon)). The goal of this work is full integration into official RapidRAW releases.
 
 ---
 
@@ -96,9 +96,9 @@ The next milestone for RapidMAP introduces **drag-and-drop geotagging**:
 
 ---
 
-### 🤝 Upstream Project
+### 🤝 Upstream Project & Integration
 
-RapidRAW is created and maintained by **[Timon Käch (@CyberTimon)](https://github.com/CyberTimon/RapidRAW)**. This fork is developed by **[Binogulus](https://github.com/Binogulus)** to propose and contribute geographic map exploration upstream.
+RapidRAW is created and maintained by **[Timon Käch (@CyberTimon)](https://github.com/CyberTimon/RapidRAW)**. This repository is not a permanent fork or rival product, but a staging area dedicated to contributing photographic map exploration upstream into the official RapidRAW codebase.
 
 ---
 
