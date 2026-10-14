@@ -3467,10 +3467,17 @@ pub fn show_in_finder(path: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if let Some(parent) = source_path.parent() {
-            Command::new("xdg-open")
-                .arg(parent)
-                .spawn()
-                .map_err(|e| e.to_string())?;
+            let mut cmd = Command::new("xdg-open");
+            cmd.arg(parent);
+
+            cmd.env_remove("LD_LIBRARY_PATH")
+                .env_remove("GIO_MODULE_DIR")
+                .env_remove("GSETTINGS_SCHEMA_DIR")
+                .env_remove("GTK_PATH")
+                .env_remove("GTK_EXE_PREFIX")
+                .env_remove("GI_TYPELIB_PATH");
+
+            cmd.spawn().map_err(|e| e.to_string())?;
         } else {
             return Err("Could not get parent directory".into());
         }

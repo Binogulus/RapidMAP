@@ -15,7 +15,7 @@ jobs:
       matrix:
         platform:
           - name: 'Linux (AppImage & DEB)'
-            os: 'ubuntu-22.04'
+            os: 'ubuntu-24.04'
             artifact-name: 'RapidRAW-Linux-x86_64'
             artifact-path: |
               src-tauri/target/release/bundle/**/*.AppImage
