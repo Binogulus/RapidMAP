@@ -112,14 +112,14 @@ function getInitialDockWidth(): number {
     const saved = localStorage.getItem(MAP_DOCK_WIDTH_STORAGE_KEY);
     if (saved !== null) {
       const parsed = parseInt(saved, 10);
-      if (!isNaN(parsed) && parsed >= 180 && parsed <= 450) {
+      if (!isNaN(parsed) && parsed >= 180 && parsed <= 500) {
         return parsed;
       }
     }
   } catch (e) {
     console.error('Failed to read dock width setting from localStorage', e);
   }
-  return 250;
+  return 260;
 }
 
 function toDmsString(val: number): string {
@@ -1230,47 +1230,60 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
         draggable={true}
         onDragStart={onDragStart}
         onClick={onSelect}
-        className={`group relative flex items-center gap-2.5 p-2 rounded-xl border transition-all cursor-grab active:cursor-grabbing select-none ${
+        className={`group relative flex flex-col rounded-xl overflow-hidden border transition-all duration-150 cursor-grab active:cursor-grabbing select-none ${
           isSelected
-            ? 'bg-accent/15 border-accent shadow-md ring-1 ring-accent/60'
-            : 'bg-surface/50 hover:bg-surface border-border-color/30 hover:border-border-color/60'
+            ? 'bg-accent/15 border-accent shadow-lg ring-2 ring-accent'
+            : 'bg-surface/50 hover:bg-surface border-border-color/30 hover:border-border-color/60 shadow-sm hover:shadow-md'
         }`}
       >
-        <div className="w-14 h-14 rounded-lg bg-bg-primary overflow-hidden shrink-0 border border-border-color/30 flex items-center justify-center relative">
+        {/* Large Thumbnail Container (Aspect 4:3 matching photo preview) */}
+        <div className="relative w-full aspect-[4/3] bg-bg-primary overflow-hidden">
           {thumbUrl ? (
             <img
               src={thumbUrl}
               alt={filename}
-              className="w-full h-full object-cover select-none pointer-events-none"
+              className="w-full h-full object-cover select-none pointer-events-none transition-transform duration-300 group-hover:scale-[1.02]"
               loading="lazy"
             />
           ) : (
-            <ImageIcon className="w-6 h-6 text-text-secondary opacity-40" />
+            <div className="w-full h-full flex items-center justify-center bg-surface">
+              <ImageIcon className="w-8 h-8 text-text-secondary opacity-30 animate-pulse" />
+            </div>
           )}
+
+          {/* Extension Badge on top-right */}
           <span
-            className={`absolute bottom-0.5 right-0.5 text-[9px] font-black px-1 rounded uppercase tracking-tighter ${
+            className={`absolute top-2 right-2 text-[10px] font-black px-1.5 py-0.5 rounded shadow-md uppercase tracking-wider backdrop-blur-xs ${
               photo.is_raw
-                ? 'bg-amber-950/90 text-amber-300 border border-amber-600/60'
-                : 'bg-sky-950/90 text-sky-300 border border-sky-600/60'
+                ? 'bg-amber-950/90 text-amber-300 border border-amber-600/70'
+                : 'bg-sky-950/90 text-sky-300 border border-sky-600/70'
             }`}
           >
             {ext || (photo.is_raw ? 'RAW' : 'IMG')}
           </span>
+
+          {/* Hover indicator: Drag onto map */}
+          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center justify-center pointer-events-none">
+            <div className="bg-surface/90 border border-accent/60 text-accent px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xl backdrop-blur-md">
+              <GripVertical className="w-3.5 h-3.5" />
+              <span>{t('library.map.dragToMap', { defaultValue: 'Drag onto map' })}</span>
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 min-w-0 flex flex-col justify-center">
-          <span className="text-xs font-semibold text-text-primary truncate block" title={filename}>
+        {/* File name and info below the thumbnail */}
+        <div className="p-2.5 bg-surface/40 border-t border-border-color/20 flex flex-col gap-0.5">
+          <span
+            className="text-xs font-semibold text-text-primary truncate block"
+            title={filename}
+          >
             {filename}
           </span>
           {timestamp && (
-            <span className="text-[10px] text-text-secondary truncate block mt-0.5 opacity-80">
+            <span className="text-[10px] text-text-secondary truncate block opacity-75 font-mono">
               {timestamp}
             </span>
           )}
-          <span className="text-[10px] text-accent/80 flex items-center gap-1 mt-1 font-medium group-hover:text-accent">
-            <GripVertical className="w-3 h-3 shrink-0" />
-            <span>{t('library.map.dragToMap', { defaultValue: 'Drag onto map' })}</span>
-          </span>
         </div>
       </div>
     );
@@ -1425,6 +1438,7 @@ export default function MapView(props: MapViewProps) {
   const mapRef = useRef<L.Map | null>(null);
   const isResizing = useRef(false);
   const thumbnails = useProcessStore((s) => s.thumbnails);
+  const mediumThumbnails = useProcessStore((s) => s.mediumThumbnails);
   const { t } = useTranslation();
 
   const handleTileStyleChange = useCallback((style: MapStyle) => {
@@ -1472,7 +1486,7 @@ export default function MapView(props: MapViewProps) {
   const resize = useCallback((mouseMoveEvent: MouseEvent) => {
     if (!isResizing.current) return;
     const newWidth = window.innerWidth - mouseMoveEvent.clientX;
-    if (newWidth >= 180 && newWidth <= 450) {
+    if (newWidth >= 180 && newWidth <= 500) {
       setDockWidth(newWidth);
       try {
         localStorage.setItem(MAP_DOCK_WIDTH_STORAGE_KEY, String(newWidth));
@@ -2187,7 +2201,7 @@ export default function MapView(props: MapViewProps) {
             </div>
 
             {/* Dock Photo List */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-2.5 flex flex-col gap-2">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 flex flex-col gap-3">
               {unlocatedPhotos.length === 0 ? (
                 <div className="m-auto text-center p-6 flex flex-col items-center">
                   <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-2 opacity-80" />
@@ -2200,7 +2214,7 @@ export default function MapView(props: MapViewProps) {
               ) : (
                 unlocatedPhotos.map((photo) => {
                   const isSelected = selectedDockPaths.has(photo.path);
-                  const thumb = thumbnails[photo.path];
+                  const thumb = mediumThumbnails[photo.path] || thumbnails[photo.path];
                   const filename = photo.path.split(/[\\/]/).pop() || '';
                   const ext = getFileExtension(filename);
                   const timestamp = getImageTimestamp(photo, localExifMap[photo.path]);
