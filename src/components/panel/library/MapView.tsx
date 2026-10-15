@@ -140,6 +140,8 @@ interface MapPhotoItem {
   timestamp: string | null;
   isRaw: boolean;
   image: ImageFile;
+  hasNativeGps: boolean;
+  isGpsModified: boolean;
 }
 
 function getFileExtension(filename: string): string {
@@ -525,6 +527,7 @@ function buildPopupHtml(
   thumbUrl: string | undefined,
   dblClickHint: string,
   removeGpsText: string,
+  revertGpsText: string,
   dragHintText: string,
 ): string {
   const ext = getFileExtension(photo.filename);
@@ -579,14 +582,28 @@ function buildPopupHtml(
         <span style="font-size: 11px; color: #38bdf8; opacity: 0.9;">
           ${dblClickHint}
         </span>
-        <button
-          data-action="remove-gps"
-          data-path="${photo.path}"
-          style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;"
-          title="${removeGpsText}"
-        >
-          🗑️ ${removeGpsText}
-        </button>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          ${
+            photo.hasNativeGps && photo.isGpsModified
+              ? `<button
+                   data-action="revert-gps"
+                   data-path="${photo.path}"
+                   style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.4); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;"
+                   title="${revertGpsText}"
+                 >
+                   ↺ ${revertGpsText}
+                 </button>`
+              : ''
+          }
+          <button
+            data-action="remove-gps"
+            data-path="${photo.path}"
+            style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; padding: 3px 8px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;"
+            title="${removeGpsText}"
+          >
+            🗑️ ${removeGpsText}
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -600,6 +617,7 @@ interface PhotoClusterLayerProps {
   onDoubleClickPhoto: (path: string) => void;
   onContextMenuPhoto: (event: MouseEvent, path: string) => void;
   onRemoveGps?: (path: string) => void;
+  onRevertGps?: (path: string) => void;
   onMovePhoto?: (path: string, lat: number, lon: number) => void;
   onMapContextMenu?: (lat: number, lon: number, screenX: number, screenY: number) => void;
   showThumbnailCards: boolean;
@@ -614,6 +632,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
   onDoubleClickPhoto,
   onContextMenuPhoto,
   onRemoveGps,
+  onRevertGps,
   onMovePhoto,
   onMapContextMenu,
   showThumbnailCards,
@@ -639,19 +658,27 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
   }, [currentFolderPath]);
 
   const dblClickHint = t('library.map.doubleClickHint', {
-    defaultValue: 'Doppio click per aprire in modalità Adjustments',
+    defaultValue: 'Double click to open in Adjustments mode',
   });
   const removeGpsText = t('library.map.removeGps', {
-    defaultValue: 'Rimuovi GPS',
+    defaultValue: 'Remove GPS',
+  });
+  const revertGpsText = t('library.map.revertGps', {
+    defaultValue: 'Revert to camera GPS',
   });
   const dragHintText = t('library.map.dragToReposition', {
-    defaultValue: 'Trascina il segnaposto per riposizionare',
+    defaultValue: 'Drag pin to reposition',
   });
 
   const onRemoveGpsRef = useRef(onRemoveGps);
   useEffect(() => {
     onRemoveGpsRef.current = onRemoveGps;
   }, [onRemoveGps]);
+
+  const onRevertGpsRef = useRef(onRevertGps);
+  useEffect(() => {
+    onRevertGpsRef.current = onRevertGps;
+  }, [onRevertGps]);
 
   const onMovePhotoRef = useRef(onMovePhoto);
   useEffect(() => {
@@ -668,14 +695,26 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
     const handlePopupOpen = (e: L.PopupEvent) => {
       const el = e.popup.getElement();
       if (!el) return;
-      const btn = el.querySelector<HTMLButtonElement>('[data-action="remove-gps"]');
-      if (btn) {
-        btn.onclick = (ev) => {
+      const btnRemove = el.querySelector<HTMLButtonElement>('[data-action="remove-gps"]');
+      if (btnRemove) {
+        btnRemove.onclick = (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
-          const p = btn.getAttribute('data-path');
+          const p = btnRemove.getAttribute('data-path');
           if (p && onRemoveGpsRef.current) {
             onRemoveGpsRef.current(p);
+            map.closePopup();
+          }
+        };
+      }
+      const btnRevert = el.querySelector<HTMLButtonElement>('[data-action="revert-gps"]');
+      if (btnRevert) {
+        btnRevert.onclick = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const p = btnRevert.getAttribute('data-path');
+          if (p && onRevertGpsRef.current) {
+            onRevertGpsRef.current(p);
             map.closePopup();
           }
         };
@@ -919,12 +958,15 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
         });
         (marker as any).photoPath = photo.path;
 
-        marker.bindPopup(buildPopupHtml(photo, cachedThumb, dblClickHint, removeGpsText, dragHintText), {
-          closeButton: true,
-          autoPan: true,
-          maxWidth: 540,
-          minWidth: 440,
-        });
+        marker.bindPopup(
+          buildPopupHtml(photo, cachedThumb, dblClickHint, removeGpsText, revertGpsText, dragHintText),
+          {
+            closeButton: true,
+            autoPan: true,
+            maxWidth: 540,
+            minWidth: 440,
+          },
+        );
 
         marker.on('dragstart', () => {
           map.closePopup();
@@ -971,7 +1013,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
         }
         const cachedThumb = currentThumbs[photo.path];
         marker.setPopupContent(
-          buildPopupHtml(photo, cachedThumb, dblClickHint, removeGpsText, dragHintText),
+          buildPopupHtml(photo, cachedThumb, dblClickHint, removeGpsText, revertGpsText, dragHintText),
         );
       }
 
@@ -1007,6 +1049,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
     map,
     dblClickHint,
     removeGpsText,
+    revertGpsText,
     dragHintText,
     showThumbnailCards,
   ]);
@@ -1056,7 +1099,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
         const isSelected = selectedPath === path;
         marker.setIcon(createPhotoThumbnailPin(thumbUrl, isSelected, photo.isRaw, photo.filename));
         marker.setPopupContent(
-          buildPopupHtml(photo, thumbUrl, dblClickHint, removeGpsText, dragHintText),
+          buildPopupHtml(photo, thumbUrl, dblClickHint, removeGpsText, revertGpsText, dragHintText),
         );
         markersToRefresh.push(marker);
       }
@@ -1076,6 +1119,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
     selectedPath,
     dblClickHint,
     removeGpsText,
+    revertGpsText,
     dragHintText,
     cluster,
   ]);
@@ -1173,6 +1217,8 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
     onDragStart,
     onRequestThumb,
   }) => {
+    const { t } = useTranslation();
+
     useEffect(() => {
       if (!thumbUrl) {
         onRequestThumb(photo.path);
@@ -1223,7 +1269,7 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
           )}
           <span className="text-[10px] text-accent/80 flex items-center gap-1 mt-1 font-medium group-hover:text-accent">
             <GripVertical className="w-3 h-3 shrink-0" />
-            <span>Trascina sulla mappa</span>
+            <span>{t('library.map.dragToMap', { defaultValue: 'Drag onto map' })}</span>
           </span>
         </div>
       </div>
@@ -1266,7 +1312,7 @@ const MapControls: React.FC<MapControlsProps> = ({
             : 'bg-surface/90 hover:bg-surface border-border-color/30 text-text-secondary hover:text-text-primary'
         }`}
         title={t('library.map.toggleDock', {
-          defaultValue: 'Pannello foto non geolocalizzate',
+          defaultValue: 'Unlocated photos panel',
         })}
       >
         <MapPinOff className="w-4 h-4" />
@@ -1280,7 +1326,7 @@ const MapControls: React.FC<MapControlsProps> = ({
       <button
         onClick={onFitBounds}
         className="w-9 h-9 rounded-lg bg-surface/90 hover:bg-surface border border-border-color/30 text-text-secondary hover:text-text-primary flex items-center justify-center shadow-lg backdrop-blur-sm transition active:scale-95"
-        title={t('library.map.fitBounds', { defaultValue: 'Inquadra tutte le foto' })}
+        title={t('library.map.fitBounds', { defaultValue: 'Fit all photos in view' })}
       >
         <Maximize2 className="w-4 h-4" />
       </button>
@@ -1296,9 +1342,9 @@ const MapControls: React.FC<MapControlsProps> = ({
         title={
           showThumbnailCards
             ? t('library.map.cardsActive', {
-                defaultValue: 'Miniature fotografiche attive (clicca per segnaposto compatti)',
+                defaultValue: 'Photo thumbnail cards active (click for compact pins)',
               })
-            : t('library.map.pinsActive', { defaultValue: 'Segnaposto compatti (clicca per miniature)' })
+            : t('library.map.pinsActive', { defaultValue: 'Compact pins active (click for photo cards)' })
         }
       >
         <ImageIcon className="w-4 h-4" />
@@ -1313,7 +1359,7 @@ const MapControls: React.FC<MapControlsProps> = ({
               ? 'bg-accent border-accent text-button-text'
               : 'bg-surface/90 hover:bg-surface border-border-color/30 text-text-secondary hover:text-text-primary'
           }`}
-          title={t('library.map.styleSelector', { defaultValue: 'Seleziona stile mappa' })}
+          title={t('library.map.styleSelector', { defaultValue: 'Select map style' })}
         >
           <Layers className="w-4 h-4" />
         </button>
@@ -1321,7 +1367,7 @@ const MapControls: React.FC<MapControlsProps> = ({
         {showMenu && (
           <div className="absolute right-0 top-11 w-44 bg-surface/95 border border-border-color/40 rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 backdrop-blur-md z-[1001]">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary px-2 py-1">
-              {t('library.map.mapStyle', { defaultValue: 'Stile Mappa' })}
+              {t('library.map.mapStyle', { defaultValue: 'Map Style' })}
             </span>
             {(Object.values(MAP_LAYERS) as MapLayerConfig[]).map((layer) => (
               <button
@@ -1567,6 +1613,13 @@ export default function MapView(props: MapViewProps) {
       if (gps) {
         const filename = img.path.split(/[\\/]/).pop() || '';
         const timestamp = getImageTimestamp(img, exifOverride);
+        const hasNative =
+          exifOverride?.HasNativeGPS === 'true' ||
+          img.exif?.HasNativeGPS === 'true';
+        const isModified =
+          exifOverride?.IsGpsModified === 'true' ||
+          img.exif?.IsGpsModified === 'true';
+
         items.push({
           id: img.path,
           path: img.path,
@@ -1576,6 +1629,8 @@ export default function MapView(props: MapViewProps) {
           timestamp,
           isRaw: img.is_raw,
           image: img,
+          hasNativeGps: hasNative,
+          isGpsModified: isModified,
         });
       } else {
         unlocated.push(img);
@@ -1613,13 +1668,21 @@ export default function MapView(props: MapViewProps) {
           const next = { ...prev };
           for (const p of paths) {
             if (lat !== null && lon !== null) {
-              next[p] = { ...(next[p] || {}), ...updates };
+              const currentExif = next[p] || {};
+              const hasNative =
+                currentExif.HasNativeGPS === 'true' ||
+                imageList.find((i) => i.path === p)?.exif?.HasNativeGPS === 'true';
+              const modUpdate: Record<string, string> = hasNative
+                ? { IsGpsModified: 'true' }
+                : {};
+              next[p] = { ...currentExif, ...updates, ...modUpdate };
             } else if (next[p]) {
               const cleaned = { ...next[p] };
               delete cleaned.GPSLatitude;
               delete cleaned.GPSLatitudeRef;
               delete cleaned.GPSLongitude;
               delete cleaned.GPSLongitudeRef;
+              delete cleaned.IsGpsModified;
               next[p] = cleaned;
             }
           }
@@ -1639,13 +1702,18 @@ export default function MapView(props: MapViewProps) {
           imageList: state.imageList.map((img) => {
             if (pathsSet.has(img.path.split('?vc=')[0])) {
               if (lat !== null && lon !== null) {
-                return { ...img, exif: { ...(img.exif || {}), ...updates } };
+                const hasNative =
+                  img.exif?.HasNativeGPS === 'true' ||
+                  localExifMap[img.path]?.HasNativeGPS === 'true';
+                const modUpdate = hasNative ? { IsGpsModified: 'true' } : {};
+                return { ...img, exif: { ...(img.exif || {}), ...updates, ...modUpdate } };
               } else if (img.exif) {
                 const cleaned = { ...img.exif };
                 delete cleaned.GPSLatitude;
                 delete cleaned.GPSLatitudeRef;
                 delete cleaned.GPSLongitude;
                 delete cleaned.GPSLongitudeRef;
+                delete cleaned.IsGpsModified;
                 return { ...img, exif: cleaned };
               }
             }
@@ -1659,10 +1727,14 @@ export default function MapView(props: MapViewProps) {
             return state;
           }
           if (lat !== null && lon !== null) {
+            const hasNative =
+              state.selectedImage.exif?.HasNativeGPS === 'true' ||
+              localExifMap[state.selectedImage.path]?.HasNativeGPS === 'true';
+            const modUpdate = hasNative ? { IsGpsModified: 'true' } : {};
             return {
               selectedImage: {
                 ...state.selectedImage,
-                exif: { ...(state.selectedImage.exif || {}), ...updates },
+                exif: { ...(state.selectedImage.exif || {}), ...updates, ...modUpdate },
               },
             };
           } else if (state.selectedImage.exif) {
@@ -1671,6 +1743,7 @@ export default function MapView(props: MapViewProps) {
             delete cleaned.GPSLatitudeRef;
             delete cleaned.GPSLongitude;
             delete cleaned.GPSLongitudeRef;
+            delete cleaned.IsGpsModified;
             return { selectedImage: { ...state.selectedImage, exif: cleaned } };
           }
           return state;
@@ -1688,15 +1761,18 @@ export default function MapView(props: MapViewProps) {
                 count: paths.length,
                 defaultValue:
                   paths.length === 1
-                    ? 'Foto riposizionata con successo'
-                    : `${paths.length} foto riposizionate con successo`,
+                    ? 'Photo repositioned successfully'
+                    : `${paths.length} photos repositioned successfully`,
               }),
             );
           } else {
             toast.success(
               t('library.map.geotagSuccess', {
                 count: paths.length,
-                defaultValue: `Posizionate ${paths.length} foto con successo`,
+                defaultValue:
+                  paths.length === 1
+                    ? 'Photo geotagged successfully'
+                    : `Successfully geotagged ${paths.length} photos`,
               }),
             );
           }
@@ -1704,16 +1780,97 @@ export default function MapView(props: MapViewProps) {
           toast.info(
             t('library.map.geotagRemoved', {
               count: paths.length,
-              defaultValue: `Coordinate GPS rimosse per ${paths.length} foto`,
+              defaultValue:
+                paths.length === 1
+                  ? 'GPS coordinates removed'
+                  : `GPS coordinates removed for ${paths.length} photos`,
             }),
           );
         }
       } catch (err) {
         console.error('Failed to set GPS coordinates', err);
-        toast.error(`Errore nel salvataggio coordinate: ${err}`);
+        toast.error(
+          t('library.map.errorSavingGps', {
+            defaultValue: `Error saving GPS coordinates: ${err}`,
+            err: String(err),
+          }),
+        );
       }
     },
     [t, imageList, localExifMap],
+  );
+
+  // Handle reverting GPS coordinates to original camera EXIF
+  const handleRevertGps = useCallback(
+    async (path: string) => {
+      try {
+        const result = await invoke<Record<string, [number, number] | null>>(
+          Invokes.RevertGpsForPaths,
+          { paths: [path] },
+        );
+        const coords = result[path];
+        if (coords) {
+          const [lat, lon] = coords;
+          const updates: Record<string, string> = {
+            GPSLatitude: toDmsString(lat),
+            GPSLatitudeRef: lat >= 0 ? 'N' : 'S',
+            GPSLongitude: toDmsString(lon),
+            GPSLongitudeRef: lon >= 0 ? 'E' : 'W',
+            HasNativeGPS: 'true',
+          };
+
+          setLocalExifMap((prev) => {
+            const next = { ...prev };
+            const current = next[path] ? { ...next[path] } : {};
+            delete current.IsGpsModified;
+            next[path] = { ...current, ...updates };
+            return next;
+          });
+
+          const cleanPath = path.split('?vc=')[0];
+          useLibraryStore.getState().setLibrary((state) => ({
+            imageList: state.imageList.map((img) => {
+              if (img.path.split('?vc=')[0] === cleanPath) {
+                const currentExif = img.exif ? { ...img.exif } : {};
+                delete currentExif.IsGpsModified;
+                return { ...img, exif: { ...currentExif, ...updates } };
+              }
+              return img;
+            }),
+          }));
+
+          useEditorStore.getState().setEditor((state) => {
+            if (!state.selectedImage || state.selectedImage.path.split('?vc=')[0] !== cleanPath) {
+              return state;
+            }
+            const currentExif = state.selectedImage.exif ? { ...state.selectedImage.exif } : {};
+            delete currentExif.IsGpsModified;
+            return {
+              selectedImage: {
+                ...state.selectedImage,
+                exif: { ...currentExif, ...updates },
+              },
+            };
+          });
+
+          toast.success(
+            t('library.map.revertSuccess', {
+              count: 1,
+              defaultValue: 'Restored original camera GPS coordinates for 1 photo',
+            }),
+          );
+        }
+      } catch (err) {
+        console.error('Failed to revert GPS coordinates', err);
+        toast.error(
+          t('library.map.errorSavingGps', {
+            defaultValue: `Error saving GPS coordinates: ${err}`,
+            err: String(err),
+          }),
+        );
+      }
+    },
+    [t],
   );
 
   // Handle moving / dragging an existing photo pin on the map
@@ -1829,7 +1986,7 @@ export default function MapView(props: MapViewProps) {
       ghost.style.top = '-1000px';
       ghost.innerText =
         pathsToDrag.length > 1
-          ? `📍 ${pathsToDrag.length} foto`
+          ? `📍 ${pathsToDrag.length} ${t('library.map.photosCount', { defaultValue: 'photos' })}`
           : `📍 ${photo.path.split(/[\\/]/).pop()}`;
       document.body.appendChild(ghost);
       e.dataTransfer.setDragImage(ghost, 15, 15);
@@ -1881,7 +2038,7 @@ export default function MapView(props: MapViewProps) {
             {t('library.map.badge', {
               count: geotaggedCount,
               total: totalPhotos,
-              defaultValue: `${geotaggedCount} / ${totalPhotos} con coordinate GPS`,
+              defaultValue: `${geotaggedCount} / ${totalPhotos} with GPS coordinates`,
             })}
           </span>
         </div>
@@ -1892,7 +2049,7 @@ export default function MapView(props: MapViewProps) {
             <div className="bg-surface/95 border border-accent text-text-primary px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-pulse">
               <MapPin className="w-6 h-6 text-accent" />
               <span className="text-sm font-bold">
-                {t('library.map.dropToGeotag', { defaultValue: 'Rilascia sulla mappa per posizionare' })}
+                {t('library.map.dropToGeotag', { defaultValue: 'Drop onto map to geotag' })}
               </span>
             </div>
           </div>
@@ -1904,19 +2061,19 @@ export default function MapView(props: MapViewProps) {
             <div className="bg-surface/95 border border-border-color/40 backdrop-blur-md p-6 rounded-xl shadow-2xl text-center max-w-sm pointer-events-auto">
               <MapPin className="w-8 h-8 text-text-secondary mx-auto mb-2 opacity-60" />
               <p className="text-sm font-semibold text-text-primary mb-1">
-                {t('library.map.noGpsTitle', { defaultValue: 'Nessuna coordinata GPS' })}
+                {t('library.map.noGpsTitle', { defaultValue: 'No GPS coordinates' })}
               </p>
               <p className="text-xs text-text-secondary mb-3">
                 {t('library.map.noGpsDesc', {
                   defaultValue:
-                    'Nessuna delle foto in questa cartella contiene informazioni geografiche nei metadati EXIF.',
+                    'None of the photos in this folder contain geographic information in EXIF metadata.',
                 })}
               </p>
               <button
                 onClick={() => setIsDockOpen(true)}
                 className="px-3.5 py-1.5 rounded-lg bg-accent text-button-text text-xs font-semibold shadow hover:opacity-90 transition"
               >
-                {t('library.map.toggleDock', { defaultValue: 'Apri pannello per posizionarle' })}
+                {t('library.map.openDockToGeotag', { defaultValue: 'Open panel to place them' })}
               </button>
             </div>
           </div>
@@ -1946,6 +2103,7 @@ export default function MapView(props: MapViewProps) {
             onDoubleClickPhoto={onImageDoubleClick}
             onContextMenuPhoto={onContextMenu}
             onRemoveGps={(path) => applyGpsToPhotos([path], null, null)}
+            onRevertGps={handleRevertGps}
             onMovePhoto={handleMovePhoto}
             onMapContextMenu={handleMapRightClick}
             showThumbnailCards={showThumbnailCards}
@@ -1979,7 +2137,7 @@ export default function MapView(props: MapViewProps) {
             <div
               onMouseDown={startResizing}
               className="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize hover:bg-accent/50 active:bg-accent transition-colors z-40"
-              title="Trascina per ridimensionare"
+              title={t('library.map.resizeDock', { defaultValue: 'Drag to resize' })}
             />
 
             {/* Dock Header */}
@@ -1988,7 +2146,7 @@ export default function MapView(props: MapViewProps) {
                 <div className="flex items-center gap-2">
                   <MapPinOff className="w-4 h-4 text-amber-500 shrink-0" />
                   <span className="text-xs font-bold text-text-primary uppercase tracking-wide">
-                    {t('library.map.unlocatedDockTitle', { defaultValue: 'Senza coordinate' })}
+                    {t('library.map.unlocatedDockTitle', { defaultValue: 'Unlocated' })}
                   </span>
                   <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-surface border border-border-color/30 text-text-secondary">
                     {unlocatedPhotos.length}
@@ -1997,7 +2155,7 @@ export default function MapView(props: MapViewProps) {
                 <button
                   onClick={() => setIsDockOpen(false)}
                   className="w-6 h-6 rounded flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface/60 transition"
-                  title="Chiudi dock"
+                  title={t('library.map.closeDock', { defaultValue: 'Close panel' })}
                 >
                   <PanelRightClose className="w-4 h-4" />
                 </button>
@@ -2006,7 +2164,7 @@ export default function MapView(props: MapViewProps) {
               <div className="flex items-center justify-between mt-1 text-[11px] text-text-secondary">
                 <span>
                   {t('library.map.unlocatedDockSubtitle', {
-                    defaultValue: 'Trascina sulla mappa per posizionare',
+                    defaultValue: 'Drag onto map to geotag',
                   })}
                 </span>
                 {unlocatedPhotos.length > 1 && (
@@ -2021,8 +2179,8 @@ export default function MapView(props: MapViewProps) {
                     className="text-accent hover:underline text-[10px] font-medium shrink-0 ml-2"
                   >
                     {selectedDockPaths.size === unlocatedPhotos.length
-                      ? 'Deseleziona'
-                      : 'Seleziona tutte'}
+                      ? t('library.map.deselectAll', { defaultValue: 'Deselect all' })
+                      : t('library.map.selectAll', { defaultValue: 'Select all' })}
                   </button>
                 )}
               </div>
@@ -2035,7 +2193,7 @@ export default function MapView(props: MapViewProps) {
                   <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-2 opacity-80" />
                   <p className="text-xs font-semibold text-text-primary">
                     {t('library.map.allGeotagged', {
-                      defaultValue: 'Tutte le foto sono geolocalizzate',
+                      defaultValue: 'All photos have GPS coordinates',
                     })}
                   </p>
                 </div>
@@ -2104,11 +2262,11 @@ export default function MapView(props: MapViewProps) {
                   {areTargetsGeotagged
                     ? t('library.map.repositionSelectedHere', {
                         count: mapContextMenu.targetPaths.length,
-                        defaultValue: `Riposiziona ${mapContextMenu.targetPaths.length} foto qui`,
+                        defaultValue: `Reposition ${mapContextMenu.targetPaths.length} photo(s) here`,
                       })
                     : t('library.map.geotagSelectedHere', {
                         count: mapContextMenu.targetPaths.length,
-                        defaultValue: `Posiziona ${mapContextMenu.targetPaths.length} foto qui`,
+                        defaultValue: `Place ${mapContextMenu.targetPaths.length} photo(s) here`,
                       })}
                 </span>
               </button>

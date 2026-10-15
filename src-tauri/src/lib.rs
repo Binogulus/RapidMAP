@@ -2430,6 +2430,7 @@ pub fn run() {
             file_management::set_rating_for_paths,
             file_management::set_flag_for_paths,
             file_management::set_gps_for_paths,
+            file_management::revert_gps_for_paths,
             file_management::import_files,
             file_management::create_virtual_copy,
             file_management::get_albums,
