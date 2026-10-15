@@ -159,7 +159,7 @@ fn get_exif_from_rrcache(image_path: &Path) -> Option<HashMap<String, String>> {
     None
 }
 
-fn save_exif_to_rrcache(image_path: &Path, exif: HashMap<String, String>) {
+pub(crate) fn save_exif_to_rrcache(image_path: &Path, exif: HashMap<String, String>) {
     let Some(folder) = image_path.parent() else {
         return;
     };

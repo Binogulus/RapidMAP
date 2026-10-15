@@ -1237,7 +1237,16 @@
       "pinsActive": "Segnaposto compatti (clicca per miniature)",
       "styleSelector": "Seleziona stile mappa",
       "mapStyle": "Stile Mappa",
-      "doubleClickHint": "Doppio click per aprire in modalità Adjustments"
+      "doubleClickHint": "Doppio click per aprire in modalità Adjustments",
+      "unlocatedDockTitle": "Senza coordinate",
+      "unlocatedDockSubtitle": "Trascina sulla mappa per posizionare",
+      "allGeotagged": "Tutte le foto sono geolocalizzate",
+      "toggleDock": "Pannello foto non geolocalizzate",
+      "dropToGeotag": "Rilascia sulla mappa per posizionare",
+      "geotagSelectedHere": "Posiziona {{count}} foto qui",
+      "removeGps": "Rimuovi coordinate GPS",
+      "geotagSuccess": "Posizionate {{count}} foto con successo",
+      "geotagRemoved": "Coordinate GPS rimosse per {{count}} foto"
     }
   },
   "masks": {

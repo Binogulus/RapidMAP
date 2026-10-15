@@ -1211,7 +1211,16 @@
       "pinsActive": "Compact pins active (click for photo cards)",
       "styleSelector": "Select map style",
       "mapStyle": "Map Style",
-      "doubleClickHint": "Double click to open in Adjustments mode"
+      "doubleClickHint": "Double click to open in Adjustments mode",
+      "unlocatedDockTitle": "Unlocated Photos",
+      "unlocatedDockSubtitle": "Drag onto map to geotag",
+      "allGeotagged": "All photos have GPS coordinates",
+      "toggleDock": "Toggle unlocated photos panel",
+      "dropToGeotag": "Drop onto map to geotag",
+      "geotagSelectedHere": "Place {{count}} photo(s) here",
+      "removeGps": "Remove GPS coordinates",
+      "geotagSuccess": "Successfully geotagged {{count}} photo(s)",
+      "geotagRemoved": "Removed GPS coordinates for {{count}} photo(s)"
     }
   },
   "masks": {
