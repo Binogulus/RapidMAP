@@ -1218,8 +1218,11 @@
       "toggleDock": "Toggle unlocated photos panel",
       "dropToGeotag": "Drop onto map to geotag",
       "geotagSelectedHere": "Place {{count}} photo(s) here",
+      "repositionSelectedHere": "Reposition {{count}} photo(s) here",
       "removeGps": "Remove GPS coordinates",
+      "dragToReposition": "Drag pin to reposition",
       "geotagSuccess": "Successfully geotagged {{count}} photo(s)",
+      "repositionedSuccess": "Successfully repositioned {{count}} photo(s)",
       "geotagRemoved": "Removed GPS coordinates for {{count}} photo(s)"
     }
   },

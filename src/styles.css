@@ -467,6 +467,21 @@
   border: none !important;
 }
 
+.custom-photo-pin,
+.photo-thumbnail-pin,
+.photo-thumbnail-pin-loading,
+.leaflet-marker-draggable {
+  cursor: grab !important;
+}
+
+.custom-photo-pin:active,
+.photo-thumbnail-pin:active,
+.photo-thumbnail-pin-loading:active,
+.leaflet-marker-dragging,
+.leaflet-marker-dragging * {
+  cursor: grabbing !important;
+}
+
 .photo-cluster-thumbnail-pin:hover,
 .photo-cluster-thumbnail-pin-loading:hover {
   transform: scale(1.06);

@@ -1244,8 +1244,11 @@
       "toggleDock": "Pannello foto non geolocalizzate",
       "dropToGeotag": "Rilascia sulla mappa per posizionare",
       "geotagSelectedHere": "Posiziona {{count}} foto qui",
+      "repositionSelectedHere": "Riposiziona {{count}} foto qui",
       "removeGps": "Rimuovi coordinate GPS",
+      "dragToReposition": "Trascina il segnaposto per riposizionare",
       "geotagSuccess": "Posizionate {{count}} foto con successo",
+      "repositionedSuccess": "Foto riposizionata con successo",
       "geotagRemoved": "Coordinate GPS rimosse per {{count}} foto"
     }
   },
