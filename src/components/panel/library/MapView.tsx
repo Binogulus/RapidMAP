@@ -1204,7 +1204,10 @@ interface UnlocatedPhotoCardProps {
   isSelected: boolean;
   cardHeight: number;
   onSelect: (e: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   onDragStart: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
   onRequestThumb: (path: string) => void;
 }
 
@@ -1218,7 +1221,10 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
     isSelected,
     cardHeight,
     onSelect,
+    onDoubleClick,
+    onContextMenu,
     onDragStart,
+    onDragEnd,
     onRequestThumb,
   }) => {
     useEffect(() => {
@@ -1249,10 +1255,13 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
       <div
         draggable={true}
         onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
         onClick={onSelect}
+        onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
         style={{ width: '100%', height: cardHeight }}
         className={clsx(
-          'shrink-0 bg-surface rounded-md overflow-hidden cursor-grab active:cursor-grabbing group relative flex flex-col transition-shadow duration-150 transform-gpu shadow-sm hover:shadow-md select-none',
+          'shrink-0 bg-surface rounded-md overflow-hidden cursor-grab active:cursor-grabbing group relative flex flex-col transition-shadow duration-150 shadow-sm hover:shadow-md select-none',
           isSelected && 'ring-2 ring-accent z-10 shadow-md',
         )}
       >
@@ -1994,11 +2003,16 @@ export default function MapView(props: MapViewProps) {
 
         // Smoothly pan map to drop location
         mapRef.current.panTo([lat, lon], { animate: true, duration: 0.4 });
+
+        // Update active selection to the placed photo
+        if (pathsToGeotag.length > 0) {
+          onImageClick?.(pathsToGeotag[0], e as any);
+        }
       } catch (err) {
         console.error('Failed to handle drop on map', err);
       }
     },
-    [applyGpsToPhotos],
+    [applyGpsToPhotos, onImageClick],
   );
 
   // Handle right-click on map to position selected photos
@@ -2026,22 +2040,38 @@ export default function MapView(props: MapViewProps) {
     [selectedDockPaths, multiSelectedPaths, activePath],
   );
 
-  // Photo selection in dock
-  const handlePhotoSelect = useCallback((path: string, e: React.MouseEvent) => {
-    if (e.shiftKey || e.ctrlKey || e.metaKey) {
-      setSelectedDockPaths((prev) => {
-        const next = new Set(prev);
-        if (next.has(path)) {
-          next.delete(path);
-        } else {
-          next.add(path);
-        }
-        return next;
-      });
-    } else {
-      setSelectedDockPaths(new Set([path]));
-    }
+  // Cancel drag or context menu on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsDraggingOverMap(false);
+        setMapContextMenu(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Photo selection in dock - updates dock selection and syncs Information module
+  const handlePhotoSelect = useCallback(
+    (path: string, e: React.MouseEvent) => {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        setSelectedDockPaths((prev) => {
+          const next = new Set(prev);
+          if (next.has(path)) {
+            next.delete(path);
+          } else {
+            next.add(path);
+          }
+          return next;
+        });
+      } else {
+        setSelectedDockPaths(new Set([path]));
+      }
+      onImageClick?.(path, e);
+    },
+    [onImageClick],
+  );
 
   // Photo drag start from dock
   const handlePhotoDragStart = useCallback(
@@ -2051,35 +2081,81 @@ export default function MapView(props: MapViewProps) {
           ? Array.from(selectedDockPaths)
           : [photo.path];
 
+      // Ensure active photo is selected in dock and synchronized with Information panel
+      setSelectedDockPaths(new Set(pathsToDrag));
+      onImageClick?.(photo.path, e as any);
+
       e.dataTransfer.setData('application/json', JSON.stringify({ paths: pathsToDrag }));
       e.dataTransfer.setData('text/plain', JSON.stringify({ paths: pathsToDrag }));
       e.dataTransfer.effectAllowed = 'copyMove';
 
+      // Create a crisp, high-definition preview badge with actual photo thumbnail
       const ghost = document.createElement('div');
-      ghost.style.padding = '6px 14px';
-      ghost.style.background = '#0284c7';
+      ghost.style.position = 'fixed';
+      ghost.style.left = '0';
+      ghost.style.top = '0';
+      ghost.style.zIndex = '-9999';
+      ghost.style.opacity = '0.01';
+      ghost.style.pointerEvents = 'none';
+      ghost.style.display = 'flex';
+      ghost.style.alignItems = 'center';
+      ghost.style.gap = '8px';
+      ghost.style.padding = '6px 12px 6px 6px';
+      ghost.style.background = '#0f172a';
       ghost.style.color = '#ffffff';
-      ghost.style.fontSize = '12px';
-      ghost.style.fontWeight = '700';
-      ghost.style.borderRadius = '8px';
-      ghost.style.boxShadow = '0 6px 16px rgba(0,0,0,0.6)';
-      ghost.style.border = '1px solid #38bdf8';
-      ghost.style.position = 'absolute';
-      ghost.style.top = '-1000px';
-      ghost.innerText =
+      ghost.style.borderRadius = '10px';
+      ghost.style.border = '1.5px solid #0284c7';
+      ghost.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+
+      const thumb = mediumThumbnails[photo.path] || thumbnails[photo.path];
+      if (thumb) {
+        const img = document.createElement('img');
+        img.src = thumb;
+        img.style.width = '48px';
+        img.style.height = '48px';
+        img.style.objectFit = 'cover';
+        img.style.borderRadius = '6px';
+        img.style.border = '1px solid rgba(255,255,255,0.2)';
+        ghost.appendChild(img);
+      }
+
+      const textDiv = document.createElement('div');
+      textDiv.style.display = 'flex';
+      textDiv.style.flexDirection = 'column';
+      textDiv.style.maxWidth = '180px';
+
+      const titleSpan = document.createElement('span');
+      titleSpan.style.fontSize = '12px';
+      titleSpan.style.fontWeight = '600';
+      titleSpan.style.overflow = 'hidden';
+      titleSpan.style.textOverflow = 'ellipsis';
+      titleSpan.style.whiteSpace = 'nowrap';
+      titleSpan.innerText =
         pathsToDrag.length > 1
           ? `📍 ${pathsToDrag.length} ${t('library.map.photosCount', { defaultValue: 'photos' })}`
           : `📍 ${photo.path.split(/[\\/]/).pop()}`;
+      textDiv.appendChild(titleSpan);
+
+      ghost.appendChild(textDiv);
       document.body.appendChild(ghost);
-      e.dataTransfer.setDragImage(ghost, 15, 15);
+
+      // Force layout calculation so browser paints at high resolution
+      ghost.getBoundingClientRect();
+
+      e.dataTransfer.setDragImage(ghost, 28, 28);
       setTimeout(() => {
         if (document.body.contains(ghost)) {
           document.body.removeChild(ghost);
         }
       }, 0);
     },
-    [selectedDockPaths],
+    [selectedDockPaths, onImageClick, mediumThumbnails, thumbnails, t],
   );
+
+  // Photo drag end handler
+  const handlePhotoDragEnd = useCallback(() => {
+    setIsDraggingOverMap(false);
+  }, []);
 
   const activeLayer = MAP_LAYERS[tileStyle] || MAP_LAYERS.dark;
 
@@ -2109,7 +2185,8 @@ export default function MapView(props: MapViewProps) {
           if (!isDraggingOverMap) setIsDraggingOverMap(true);
         }}
         onDragLeave={(e) => {
-          if (e.currentTarget === e.target) {
+          const related = e.relatedTarget as Node | null;
+          if (!related || !e.currentTarget.contains(related)) {
             setIsDraggingOverMap(false);
           }
         }}
@@ -2127,12 +2204,12 @@ export default function MapView(props: MapViewProps) {
           </span>
         </div>
 
-        {/* Drag over map overlay indicator */}
+        {/* Drag over map overlay indicator - Crisp map without blur, unobtrusive top banner */}
         {isDraggingOverMap && (
-          <div className="absolute inset-0 z-[1100] pointer-events-none bg-accent/15 border-2 border-accent border-dashed flex items-center justify-center backdrop-blur-[1px]">
-            <div className="bg-surface/95 border border-accent text-text-primary px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-pulse">
-              <MapPin className="w-6 h-6 text-accent" />
-              <span className="text-sm font-bold">
+          <div className="absolute inset-0 z-[1100] pointer-events-none border-2 border-accent border-dashed">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-surface/95 border border-accent text-text-primary px-4 py-2 rounded-xl shadow-2xl flex items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+              <MapPin className="w-4 h-4 text-accent animate-bounce" />
+              <span className="text-xs font-semibold">
                 {t('library.map.dropToGeotag', { defaultValue: 'Drop onto map to geotag' })}
               </span>
             </div>
@@ -2211,6 +2288,34 @@ export default function MapView(props: MapViewProps) {
       {/* Right Dock for Unlocated Photos */}
       <div
         style={{ width: isDockOpen ? dockWidth : 0 }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'none';
+          if (isDraggingOverMap) setIsDraggingOverMap(false);
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          if (isDraggingOverMap) setIsDraggingOverMap(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOverMap(false);
+          const rawData =
+            e.dataTransfer.getData('application/json') || e.dataTransfer.getData('text/plain');
+          if (rawData) {
+            try {
+              const parsed = JSON.parse(rawData);
+              const paths: string[] = Array.isArray(parsed?.paths) ? parsed.paths : [];
+              if (paths.length > 0) {
+                setSelectedDockPaths(new Set(paths));
+                onImageClick?.(paths[0], e as any);
+              }
+            } catch (err) {
+              console.error('Failed to parse dropped data on dock', err);
+            }
+          }
+        }}
         className={`relative shrink-0 border-l border-surface/50 bg-bg-secondary/70 backdrop-blur-md flex flex-col ${
           isResizingState ? '' : 'transition-[width] duration-200 ease-out'
         } z-[1000] ${isDockOpen ? '' : 'overflow-hidden border-none'}`}
@@ -2257,7 +2362,11 @@ export default function MapView(props: MapViewProps) {
                       if (selectedDockPaths.size === unlocatedPhotos.length) {
                         setSelectedDockPaths(new Set());
                       } else {
-                        setSelectedDockPaths(new Set(unlocatedPhotos.map((p) => p.path)));
+                        const allPaths = unlocatedPhotos.map((p) => p.path);
+                        setSelectedDockPaths(new Set(allPaths));
+                        if (allPaths.length > 0) {
+                          onImageClick?.(allPaths[0], {} as any);
+                        }
                       }
                     }}
                     className="text-accent hover:underline text-[10px] font-medium shrink-0 ml-2"
@@ -2283,7 +2392,9 @@ export default function MapView(props: MapViewProps) {
                 </div>
               ) : (
                 unlocatedPhotos.map((photo) => {
-                  const isSelected = selectedDockPaths.has(photo.path);
+                  const isSelected =
+                    selectedDockPaths.has(photo.path) ||
+                    (selectedDockPaths.size === 0 && activePath === photo.path);
                   const thumb = mediumThumbnails[photo.path] || thumbnails[photo.path];
                   const filename = photo.path.split(/[\\/]/).pop() || '';
                   const timestamp = getImageTimestamp(photo, localExifMap[photo.path]);
@@ -2301,7 +2412,10 @@ export default function MapView(props: MapViewProps) {
                       isSelected={isSelected}
                       cardHeight={cardHeight}
                       onSelect={(e) => handlePhotoSelect(photo.path, e)}
+                      onDoubleClick={() => onImageDoubleClick?.(photo.path)}
+                      onContextMenu={(e) => onContextMenu?.(e, photo.path)}
                       onDragStart={(e) => handlePhotoDragStart(photo, e)}
+                      onDragEnd={handlePhotoDragEnd}
                       onRequestThumb={queueThumbnailRequest}
                     />
                   );
