@@ -176,13 +176,12 @@ function createCustomPin(isSelected: boolean, isRaw: boolean): L.DivIcon {
   });
 }
 
-function createThumbnailLoadingPin(isSelected: boolean, isRaw: boolean, filename: string): L.DivIcon {
+function createThumbnailLoadingPin(isSelected: boolean, isRaw: boolean, _filename: string): L.DivIcon {
   const borderColor = isSelected ? '#38bdf8' : isRaw ? '#f59e0b' : '#0284c7';
   const glow = isSelected
     ? 'box-shadow: 0 0 16px rgba(56, 189, 248, 0.9), 0 4px 10px rgba(0, 0, 0, 0.6);'
     : 'box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);';
   const scale = isSelected ? 'scale(1.15)' : 'scale(1)';
-  const ext = getFileExtension(filename);
 
   const html = `
     <div style="position: relative; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); transform: ${scale}; cursor: grab; display: flex; flex-direction: column; align-items: center;">
@@ -204,19 +203,6 @@ function createThumbnailLoadingPin(isSelected: boolean, isRaw: boolean, filename
           <circle cx="9" cy="9" r="2"/>
           <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
         </svg>
-        <span style="
-          position: absolute;
-          top: 4px;
-          right: 4px;
-          font-size: 11px;
-          font-weight: 800;
-          background: ${isRaw ? 'rgba(120, 53, 15, 0.92)' : 'rgba(12, 74, 110, 0.92)'};
-          color: ${isRaw ? '#fde68a' : '#bae6fd'};
-          padding: 2px 6px;
-          border-radius: 4px;
-          border: 1px solid ${isRaw ? '#d97706' : '#0284c7'};
-          text-transform: uppercase;
-        ">${ext || (isRaw ? 'RAW' : 'IMG')}</span>
       </div>
       <div style="
         width: 0;
@@ -249,7 +235,6 @@ function createPhotoThumbnailPin(
     ? 'box-shadow: 0 0 16px rgba(56, 189, 248, 0.9), 0 4px 10px rgba(0, 0, 0, 0.6);'
     : 'box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);';
   const scale = isSelected ? 'scale(1.15)' : 'scale(1)';
-  const ext = getFileExtension(filename);
 
   const html = `
     <div style="position: relative; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); transform: ${scale}; cursor: grab; display: flex; flex-direction: column; align-items: center;">
@@ -272,24 +257,6 @@ function createPhotoThumbnailPin(
           style="width: 100%; height: 100%; object-fit: cover; display: block;"
           loading="eager"
         />
-        ${
-          isRaw
-            ? `<span style="
-                position: absolute;
-                top: 4px;
-                right: 4px;
-                font-size: 11px;
-                font-weight: 800;
-                background: rgba(120, 53, 15, 0.92);
-                color: #fde68a;
-                padding: 2px 6px;
-                border-radius: 4px;
-                border: 1px solid #d97706;
-                text-transform: uppercase;
-                letter-spacing: -0.5px;
-              ">${ext || 'RAW'}</span>`
-            : ''
-        }
       </div>
       <div style="
         width: 0;
