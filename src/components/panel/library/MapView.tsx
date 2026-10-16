@@ -22,6 +22,8 @@ import { useProcessStore } from '../../../store/useProcessStore';
 import { useLibraryStore } from '../../../store/useLibraryStore';
 import { useEditorStore } from '../../../store/useEditorStore';
 import { getImageGps, getImageTimestamp, GeoLocation } from '../../../utils/gpsUtils';
+import clsx from 'clsx';
+import { IconAperture, IconFocalLength, IconIso, IconShutter } from '../editor/ExifIcons';
 
 export type MapStyle = 'dark' | 'osm' | 'satellite';
 
@@ -1196,8 +1198,8 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
 interface UnlocatedPhotoCardProps {
   photo: ImageFile;
   filename: string;
-  ext: string;
   timestamp: string | null;
+  exif?: Record<string, string>;
   thumbUrl?: string;
   isSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
@@ -1209,82 +1211,130 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
   ({
     photo,
     filename,
-    ext,
     timestamp,
+    exif,
     thumbUrl,
     isSelected,
     onSelect,
     onDragStart,
     onRequestThumb,
   }) => {
-    const { t } = useTranslation();
-
     useEffect(() => {
       if (!thumbUrl) {
         onRequestThumb(photo.path);
       }
     }, [photo.path, thumbUrl, onRequestThumb]);
 
+    const { shutter, fNumber, iso, focal } = useMemo(() => {
+      const e = exif || photo.exif || {};
+      let fNum = e.FNumber ? String(e.FNumber) : '';
+      if (fNum && !fNum.toLowerCase().startsWith('f')) fNum = `f/${fNum}`;
+      const focalVal = e.FocalLengthIn35mmFilm || e.FocalLength || '';
+      const focalStr = focalVal
+        ? String(focalVal).endsWith('mm')
+          ? String(focalVal)
+          : `${focalVal}mm`
+        : '';
+      return {
+        shutter: e.ExposureTime || '',
+        fNumber: fNum,
+        iso: e.PhotographicSensitivity || e.ISOSpeedRatings || '',
+        focal: focalStr,
+      };
+    }, [exif, photo.exif]);
+
     return (
       <div
         draggable={true}
         onDragStart={onDragStart}
         onClick={onSelect}
-        className={`group relative flex flex-col rounded-xl overflow-hidden border transition-all duration-150 cursor-grab active:cursor-grabbing select-none ${
-          isSelected
-            ? 'bg-accent/15 border-accent shadow-lg ring-2 ring-accent'
-            : 'bg-surface/50 hover:bg-surface border-border-color/30 hover:border-border-color/60 shadow-sm hover:shadow-md'
-        }`}
+        className={clsx(
+          'w-full aspect-square bg-surface rounded-md overflow-hidden cursor-grab active:cursor-grabbing group relative flex flex-col transition-all duration-150 transform-gpu shadow-sm hover:shadow-md select-none',
+          isSelected && 'ring-2 ring-accent z-10 shadow-md',
+        )}
       >
-        {/* Large Thumbnail Container (Aspect 4:3 matching photo preview) */}
-        <div className="relative w-full aspect-[4/3] bg-bg-primary overflow-hidden">
+        {/* Full Image Container with object-contain so the entire photo is shown without cropping */}
+        <div className="relative w-full flex-1 min-h-0 z-0 bg-surface transition-opacity duration-200">
           {thumbUrl ? (
             <img
               src={thumbUrl}
               alt={filename}
-              className="w-full h-full object-cover select-none pointer-events-none transition-transform duration-300 group-hover:scale-[1.02]"
+              className="w-full h-full object-contain transition-transform duration-300 will-change-transform relative group-hover:scale-[1.02] select-none pointer-events-none"
               loading="lazy"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-surface">
-              <ImageIcon className="w-8 h-8 text-text-secondary opacity-30 animate-pulse" />
+              <ImageIcon className="text-text-secondary animate-pulse" />
             </div>
           )}
+        </div>
 
-          {/* Extension Badge on top-right */}
-          <span
-            className={`absolute top-2 right-2 text-[10px] font-black px-1.5 py-0.5 rounded shadow-md uppercase tracking-wider backdrop-blur-xs ${
-              photo.is_raw
-                ? 'bg-amber-950/90 text-amber-300 border border-amber-600/70'
-                : 'bg-sky-950/90 text-sky-300 border border-sky-600/70'
-            }`}
-          >
-            {ext || (photo.is_raw ? 'RAW' : 'IMG')}
-          </span>
+        {/* Gradient shadow behind title */}
+        <div className="absolute bottom-0 left-0 right-0 h-16 transition-opacity duration-300 pointer-events-none z-10 bg-linear-to-t from-black/75 to-transparent group-hover:opacity-0" />
 
-          {/* Hover indicator: Drag onto map */}
-          <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center justify-center pointer-events-none">
-            <div className="bg-surface/90 border border-accent/60 text-accent px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xl backdrop-blur-md">
-              <GripVertical className="w-3.5 h-3.5" />
-              <span>{t('library.map.dragToMap', { defaultValue: 'Drag onto map' })}</span>
+        {/* Bottom bar with title and shooting data on hover */}
+        <div className="absolute bottom-0 left-0 right-0 flex flex-col p-2 pb-1.5 transition-all duration-300 ease-in-out z-20 bg-transparent group-hover:bg-surface/85 backdrop-blur-none group-hover:backdrop-blur-md border-t border-transparent group-hover:border-border-color/50">
+          <div className="flex items-end justify-between shrink-0">
+            <span
+              className="truncate pr-2 text-xs font-medium text-white transition-colors duration-300"
+              title={filename}
+            >
+              {filename}
+            </span>
+          </div>
+
+          <div className="grid transition-[grid-template-rows,opacity] duration-300 ease-in-out shrink-0 grid-rows-[0fr] opacity-0 group-hover:grid-rows-[1fr] group-hover:opacity-100">
+            <div className="overflow-hidden min-h-0">
+              <div className="pt-1.5 pb-0.5 flex flex-wrap items-center gap-x-2.5 shrink-0 text-text-secondary">
+                {shutter && (
+                  <div className="flex items-center gap-1">
+                    <IconShutter className="w-2.5 h-2.5 text-text-secondary shrink-0" />
+                    <span className="text-[9px] font-medium tracking-wide text-text-primary">
+                      {shutter}
+                    </span>
+                  </div>
+                )}
+                {fNumber && (
+                  <div className="flex items-center gap-1">
+                    <IconAperture className="w-2.5 h-2.5 text-text-secondary shrink-0" />
+                    <span className="text-[9px] font-medium tracking-wide text-text-primary">
+                      {fNumber}
+                    </span>
+                  </div>
+                )}
+                {iso && (
+                  <div className="flex items-center gap-1">
+                    <IconIso className="w-2.5 h-2.5 text-text-secondary shrink-0" />
+                    <span className="text-[9px] font-medium tracking-wide text-text-primary">
+                      {iso}
+                    </span>
+                  </div>
+                )}
+                {focal && (
+                  <div className="flex items-center gap-1">
+                    <IconFocalLength className="w-2.5 h-2.5 text-text-secondary shrink-0" />
+                    <span className="text-[9px] font-medium tracking-wide text-text-primary">
+                      {focal}
+                    </span>
+                  </div>
+                )}
+                {!shutter && !fNumber && !iso && !focal && timestamp && (
+                  <span className="text-[9px] font-medium tracking-wide text-text-secondary">
+                    {timestamp}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* File name and info below the thumbnail */}
-        <div className="p-2.5 bg-surface/40 border-t border-border-color/20 flex flex-col gap-0.5">
-          <span
-            className="text-xs font-semibold text-text-primary truncate block"
-            title={filename}
-          >
-            {filename}
-          </span>
-          {timestamp && (
-            <span className="text-[10px] text-text-secondary truncate block opacity-75 font-mono">
-              {timestamp}
-            </span>
+        {/* Selection / Hover ring */}
+        <div
+          className={clsx(
+            'absolute inset-0 rounded-md pointer-events-none z-30 transition-all duration-150 ring-2 ring-inset',
+            isSelected ? 'ring-accent' : 'ring-transparent group-hover:ring-hover-color',
           )}
-        </div>
+        />
       </div>
     );
   },
@@ -2201,7 +2251,7 @@ export default function MapView(props: MapViewProps) {
             </div>
 
             {/* Dock Photo List */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 flex flex-col gap-3">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-2">
               {unlocatedPhotos.length === 0 ? (
                 <div className="m-auto text-center p-6 flex flex-col items-center">
                   <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-2 opacity-80" />
@@ -2216,16 +2266,16 @@ export default function MapView(props: MapViewProps) {
                   const isSelected = selectedDockPaths.has(photo.path);
                   const thumb = mediumThumbnails[photo.path] || thumbnails[photo.path];
                   const filename = photo.path.split(/[\\/]/).pop() || '';
-                  const ext = getFileExtension(filename);
                   const timestamp = getImageTimestamp(photo, localExifMap[photo.path]);
+                  const exif = localExifMap[photo.path] || photo.exif;
 
                   return (
                     <UnlocatedPhotoCard
                       key={photo.path}
                       photo={photo}
                       filename={filename}
-                      ext={ext}
                       timestamp={timestamp}
+                      exif={exif}
                       thumbUrl={thumb}
                       isSelected={isSelected}
                       onSelect={(e) => handlePhotoSelect(photo.path, e)}
