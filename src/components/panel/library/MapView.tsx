@@ -645,6 +645,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
   const markersMapRef = useRef<Map<string, L.Marker>>(new Map());
   const hasInitialFitRef = useRef<boolean>(false);
   const prevSelectedPathRef = useRef<string | null>(null);
+  const hasZoomedToInitialRef = useRef<boolean>(false);
   const prevThumbnailsKeysRef = useRef<Set<string>>(new Set());
   const thumbnails = useProcessStore((s) => s.thumbnails);
   const { t } = useTranslation();
@@ -654,9 +655,10 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
     showThumbnailCardsRef.current = showThumbnailCards;
   }, [showThumbnailCards]);
 
-  // Reset initial fit flag when switching folders
+  // Reset initial fit and zoom flags when switching folders
   useEffect(() => {
     hasInitialFitRef.current = false;
+    hasZoomedToInitialRef.current = false;
   }, [currentFolderPath]);
 
   const dblClickHint = t('library.map.doubleClickHint', {
@@ -1028,17 +1030,33 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
       cluster.addLayers(markersToAdd);
     }
 
-    // 3. Initial fit bounds ONLY ONCE per folder open
+    // 3. Initial view positioning (zoom directly to selected photo if present, otherwise fit bounds)
+    const selectedPhoto = selectedPath ? photos.find((p) => p.path === selectedPath) : null;
+
     if (!hasInitialFitRef.current && photos.length > 0) {
       hasInitialFitRef.current = true;
-      try {
-        const latLngs = photos.map((p) => [p.lat, p.lon] as [number, number]);
-        const bounds = L.latLngBounds(latLngs);
-        if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      if (selectedPhoto) {
+        hasZoomedToInitialRef.current = true;
+        const targetMarker = markersMapRef.current.get(selectedPhoto.path);
+        const targetZoom = 16;
+        map.setView([selectedPhoto.lat, selectedPhoto.lon], targetZoom);
+        if (cluster && targetMarker) {
+          cluster.zoomToShowLayer(targetMarker, () => {
+            targetMarker.openPopup();
+          });
+        } else if (targetMarker) {
+          targetMarker.openPopup();
         }
-      } catch (e) {
-        console.error('Failed to fit bounds', e);
+      } else {
+        try {
+          const latLngs = photos.map((p) => [p.lat, p.lon] as [number, number]);
+          const bounds = L.latLngBounds(latLngs);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+          }
+        } catch (e) {
+          console.error('Failed to fit bounds', e);
+        }
       }
     }
   }, [
@@ -1168,6 +1186,7 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
       }
     }
 
+    const isDifferent = prevSelectedPathRef.current !== selectedPath;
     prevSelectedPathRef.current = selectedPath;
 
     if (!selectedPath) return;
@@ -1184,13 +1203,25 @@ const PhotoClusterLayer: React.FC<PhotoClusterLayerProps> = ({
             ? createThumbnailLoadingPin(true, photo.isRaw, photo.filename)
             : createCustomPin(true, photo.isRaw),
       );
-      marker.openPopup();
 
-      map.flyTo([photo.lat, photo.lon], Math.max(map.getZoom(), 15), {
-        duration: 0.8,
-      });
+      const targetZoom = Math.max(map.getZoom(), 16);
+
+      if (!hasZoomedToInitialRef.current || isDifferent) {
+        hasZoomedToInitialRef.current = true;
+        if (cluster) {
+          cluster.zoomToShowLayer(marker, () => {
+            marker.openPopup();
+            if (map.getZoom() < targetZoom) {
+              map.flyTo([photo.lat, photo.lon], targetZoom, { duration: 0.5 });
+            }
+          });
+        } else {
+          marker.openPopup();
+          map.flyTo([photo.lat, photo.lon], targetZoom, { duration: 0.6 });
+        }
+      }
     }
-  }, [selectedPath, photos, map, showThumbnailCards, thumbnails]);
+  }, [selectedPath, photos, map, showThumbnailCards, thumbnails, cluster]);
 
   return null;
 };
@@ -1616,6 +1647,19 @@ export default function MapView(props: MapViewProps) {
     onRequestThumbnails,
   } = props;
 
+  const editorSelectedPath = useEditorStore((s) => s.selectedImage?.path);
+  const libraryActivePath = useLibraryStore((s) => s.libraryActivePath);
+
+  const effectiveSelectedPath = useMemo(() => {
+    return (
+      activePath ||
+      libraryActivePath ||
+      editorSelectedPath ||
+      (multiSelectedPaths && multiSelectedPaths.length > 0 ? multiSelectedPaths[0] : null) ||
+      null
+    );
+  }, [activePath, libraryActivePath, editorSelectedPath, multiSelectedPaths]);
+
   // Thumbnail batch queue
   const requestQueueRef = useRef<Set<string>>(new Set());
   const requestTimeoutRef = useRef<any>(null);
@@ -2023,8 +2067,8 @@ export default function MapView(props: MapViewProps) {
           ? Array.from(selectedDockPaths)
           : multiSelectedPaths.length > 0
             ? multiSelectedPaths
-            : activePath
-              ? [activePath]
+            : effectiveSelectedPath
+              ? [effectiveSelectedPath]
               : [];
 
       if (targetPaths.length > 0) {
@@ -2037,7 +2081,7 @@ export default function MapView(props: MapViewProps) {
         });
       }
     },
-    [selectedDockPaths, multiSelectedPaths, activePath],
+    [selectedDockPaths, multiSelectedPaths, effectiveSelectedPath],
   );
 
   // Cancel drag or context menu on Escape
@@ -2172,6 +2216,33 @@ export default function MapView(props: MapViewProps) {
     }
   }, [geotaggedPhotos]);
 
+  const initialSelectedPhoto = useMemo(() => {
+    if (!effectiveSelectedPath) return null;
+    return geotaggedPhotos.find((p) => p.path === effectiveSelectedPath) || null;
+  }, [effectiveSelectedPath, geotaggedPhotos]);
+
+  const initialCenter: [number, number] = useMemo(() => {
+    if (initialSelectedPhoto) {
+      return [initialSelectedPhoto.lat, initialSelectedPhoto.lon];
+    }
+    if (geotaggedPhotos.length > 0) {
+      return [geotaggedPhotos[0].lat, geotaggedPhotos[0].lon];
+    }
+    return [20, 0];
+  }, [initialSelectedPhoto, geotaggedPhotos]);
+
+  const initialZoom: number = initialSelectedPhoto ? 16 : geotaggedPhotos.length > 0 ? 5 : 2;
+
+  // Auto-reveal and highlight unlocated photo in dock if selected from any module
+  useEffect(() => {
+    if (!effectiveSelectedPath) return;
+    const isUnlocated = unlocatedPhotos.some((p) => p.path === effectiveSelectedPath);
+    if (isUnlocated) {
+      setIsDockOpen(true);
+      setSelectedDockPaths(new Set([effectiveSelectedPath]));
+    }
+  }, [effectiveSelectedPath, unlocatedPhotos]);
+
   return (
     <div className="relative flex w-full h-full bg-bg-primary overflow-hidden select-none">
       {/* Transparent overlay during dock drag to prevent event stealing and maintain cursor */}
@@ -2242,8 +2313,8 @@ export default function MapView(props: MapViewProps) {
 
         {/* Leaflet Map */}
         <MapContainer
-          center={[20, 0]}
-          zoom={2}
+          center={initialCenter}
+          zoom={initialZoom}
           className="w-full h-full"
           ref={mapRef}
           attributionControl={true}
@@ -2258,7 +2329,7 @@ export default function MapView(props: MapViewProps) {
 
           <PhotoClusterLayer
             photos={geotaggedPhotos}
-            selectedPath={activePath}
+            selectedPath={effectiveSelectedPath}
             currentFolderPath={currentFolderPath}
             onSelectPhoto={onImageClick}
             onDoubleClickPhoto={onImageDoubleClick}
@@ -2394,7 +2465,7 @@ export default function MapView(props: MapViewProps) {
                 unlocatedPhotos.map((photo) => {
                   const isSelected =
                     selectedDockPaths.has(photo.path) ||
-                    (selectedDockPaths.size === 0 && activePath === photo.path);
+                    (selectedDockPaths.size === 0 && effectiveSelectedPath === photo.path);
                   const thumb = mediumThumbnails[photo.path] || thumbnails[photo.path];
                   const filename = photo.path.split(/[\\/]/).pop() || '';
                   const timestamp = getImageTimestamp(photo, localExifMap[photo.path]);
