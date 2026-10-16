@@ -3102,6 +3102,167 @@ pub fn set_flag_for_paths(
     Ok(())
 }
 
+fn to_dms_string(val: f64) -> String {
+    let abs_val = val.abs();
+    let deg = abs_val.floor() as u32;
+    let min_full = (abs_val - deg as f64) * 60.0;
+    let min = min_full.floor() as u32;
+    let sec = (min_full - min as f64) * 60.0;
+    format!("{} deg {} min {:.4} sec", deg, min, sec)
+}
+
+pub fn extract_native_gps(source_path: &Path) -> Option<(f64, f64, String, String, String, String)> {
+    let source_path_str = source_path.to_string_lossy();
+    let map = if let Ok(mmap) = read_file_mapped(source_path) {
+        crate::exif_processing::read_exif_data_from_bytes(&source_path_str, &mmap)
+    } else if let Ok(bytes) = std::fs::read(source_path) {
+        crate::exif_processing::read_exif_data_from_bytes(&source_path_str, &bytes)
+    } else {
+        return None;
+    };
+
+    let lat_str = map.get("GPSLatitude")?;
+    let lon_str = map.get("GPSLongitude")?;
+    let lat_ref = map.get("GPSLatitudeRef").cloned().unwrap_or_else(|| "N".to_string());
+    let lon_ref = map.get("GPSLongitudeRef").cloned().unwrap_or_else(|| "E".to_string());
+
+    let (d, m, s) = parse_gps_components(lat_str)?;
+    let mut lat_val = d as f64 + m / 60.0 + s / 3600.0;
+    if lat_ref.to_uppercase() == "S" {
+        lat_val = -lat_val;
+    }
+
+    let (d, m, s) = parse_gps_components(lon_str)?;
+    let mut lon_val = d as f64 + m / 60.0 + s / 3600.0;
+    if lon_ref.to_uppercase() == "W" {
+        lon_val = -lon_val;
+    }
+
+    Some((lat_val, lon_val, lat_str.clone(), lat_ref, lon_str.clone(), lon_ref))
+}
+
+#[tauri::command]
+pub fn set_gps_for_paths(
+    paths: Vec<String>,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let settings = load_settings(app_handle.clone()).unwrap_or_default();
+    let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
+    let create_xmp_if_missing = settings.create_xmp_if_missing.unwrap_or(false);
+
+    paths.par_iter().for_each(|path| {
+        let (source_path, sidecar_path) = parse_virtual_path(path);
+        let mut metadata =
+            crate::exif_processing::load_sidecar_with_exif(&sidecar_path, &source_path);
+
+        let has_native = if let Some(ref emap) = metadata.exif {
+            emap.get("HasNativeGPS").map(|v| v == "true").unwrap_or_else(|| {
+                extract_native_gps(&source_path).is_some()
+            })
+        } else {
+            extract_native_gps(&source_path).is_some()
+        };
+
+        if let (Some(lat), Some(lon)) = (latitude, longitude) {
+            if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
+                let lat_str = to_dms_string(lat);
+                let lat_ref = if lat >= 0.0 { "N" } else { "S" }.to_string();
+                let lon_str = to_dms_string(lon);
+                let lon_ref = if lon >= 0.0 { "E" } else { "W" }.to_string();
+
+                let mut exif_map = metadata.exif.unwrap_or_default();
+                exif_map.insert("GPSLatitude".to_string(), lat_str);
+                exif_map.insert("GPSLatitudeRef".to_string(), lat_ref);
+                exif_map.insert("GPSLongitude".to_string(), lon_str);
+                exif_map.insert("GPSLongitudeRef".to_string(), lon_ref);
+                if has_native {
+                    exif_map.insert("HasNativeGPS".to_string(), "true".to_string());
+                    exif_map.insert("IsGpsModified".to_string(), "true".to_string());
+                }
+
+                crate::exif_processing::save_exif_to_rrcache(&source_path, exif_map.clone());
+                metadata.exif = Some(exif_map);
+            }
+        } else if let Some(ref mut exif_map) = metadata.exif {
+            exif_map.remove("GPSLatitude");
+            exif_map.remove("GPSLatitudeRef");
+            exif_map.remove("GPSLongitude");
+            exif_map.remove("GPSLongitudeRef");
+            exif_map.remove("IsGpsModified");
+            crate::exif_processing::save_exif_to_rrcache(&source_path, exif_map.clone());
+        }
+
+        if let Ok(json_string) = serde_json::to_string_pretty(&metadata) {
+            let _ = std::fs::write(&sidecar_path, json_string);
+        }
+
+        if enable_xmp_sync {
+            sync_metadata_to_xmp(&source_path, &metadata, create_xmp_if_missing);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn revert_gps_for_paths(
+    paths: Vec<String>,
+    app_handle: AppHandle,
+) -> Result<HashMap<String, Option<(f64, f64)>>, String> {
+    let settings = load_settings(app_handle.clone()).unwrap_or_default();
+    let enable_xmp_sync = settings.enable_xmp_sync.unwrap_or(false);
+    let create_xmp_if_missing = settings.create_xmp_if_missing.unwrap_or(false);
+
+    let results: Vec<(String, Option<(f64, f64)>)> = paths
+        .par_iter()
+        .map(|path| {
+            let (source_path, sidecar_path) = parse_virtual_path(path);
+            let mut metadata =
+                crate::exif_processing::load_sidecar_with_exif(&sidecar_path, &source_path);
+
+            let native_opt = extract_native_gps(&source_path);
+            let ret = if let Some((lat_val, lon_val, lat_str, lat_ref, lon_str, lon_ref)) = native_opt {
+                let mut exif_map = metadata.exif.unwrap_or_default();
+                exif_map.insert("GPSLatitude".to_string(), lat_str);
+                exif_map.insert("GPSLatitudeRef".to_string(), lat_ref);
+                exif_map.insert("GPSLongitude".to_string(), lon_str);
+                exif_map.insert("GPSLongitudeRef".to_string(), lon_ref);
+                exif_map.insert("HasNativeGPS".to_string(), "true".to_string());
+                exif_map.remove("IsGpsModified");
+
+                crate::exif_processing::save_exif_to_rrcache(&source_path, exif_map.clone());
+                metadata.exif = Some(exif_map);
+                Some((lat_val, lon_val))
+            } else {
+                if let Some(ref mut exif_map) = metadata.exif {
+                    exif_map.remove("GPSLatitude");
+                    exif_map.remove("GPSLatitudeRef");
+                    exif_map.remove("GPSLongitude");
+                    exif_map.remove("GPSLongitudeRef");
+                    exif_map.remove("IsGpsModified");
+                    exif_map.remove("HasNativeGPS");
+                    crate::exif_processing::save_exif_to_rrcache(&source_path, exif_map.clone());
+                }
+                None
+            };
+
+            if let Ok(json_string) = serde_json::to_string_pretty(&metadata) {
+                let _ = std::fs::write(&sidecar_path, json_string);
+            }
+
+            if enable_xmp_sync {
+                sync_metadata_to_xmp(&source_path, &metadata, create_xmp_if_missing);
+            }
+
+            (path.clone(), ret)
+        })
+        .collect();
+
+    Ok(results.into_iter().collect())
+}
+
 #[tauri::command]
 pub fn load_metadata(path: String, app_handle: AppHandle) -> Result<ImageMetadata, String> {
     let settings = load_settings(app_handle).unwrap_or_default();
@@ -4190,6 +4351,86 @@ pub fn resolve_xmp_path(image_path: &Path) -> Option<PathBuf> {
     }
 }
 
+fn parse_gps_components(coord: &str) -> Option<(u32, f64, f64)> {
+    let trimmed = coord.trim();
+    let re = regex!(
+        r#"(\d+)\s*(?:deg|°)\s*(\d+(?:\.\d+)?)\s*(?:min|'|’|′)\s*(\d+(?:\.\d+)?)\s*(?:sec|"|”|″)?"#
+    );
+    if let Some(caps) = re.captures(trimmed) {
+        let deg: u32 = caps.get(1)?.as_str().parse().ok()?;
+        let min: f64 = caps.get(2)?.as_str().parse().ok()?;
+        let sec: f64 = caps
+            .get(3)
+            .map(|m| m.as_str().parse().unwrap_or(0.0))
+            .unwrap_or(0.0);
+        return Some((deg, min, sec));
+    }
+    if let Ok(val) = trimmed.parse::<f64>() {
+        let abs_val = val.abs();
+        let deg = abs_val.floor() as u32;
+        let min_full = (abs_val - deg as f64) * 60.0;
+        let min = min_full.floor();
+        let sec = (min_full - min) * 60.0;
+        return Some((deg, min, sec));
+    }
+    None
+}
+
+pub fn extract_xmp_gps(content: &str) -> Option<(String, String, String, String)> {
+    let re_lat = regex!(r#"exif:GPSLatitude\s*=\s*"([^"]+)""#);
+    let re_lat_tag = regex!(r#"<exif:GPSLatitude\s*>([^<]+)</exif:GPSLatitude>"#);
+    let re_lon = regex!(r#"exif:GPSLongitude\s*=\s*"([^"]+)""#);
+    let re_lon_tag = regex!(r#"<exif:GPSLongitude\s*>([^<]+)</exif:GPSLongitude>"#);
+
+    let lat_raw = re_lat
+        .captures(content)
+        .or_else(|| re_lat_tag.captures(content))?
+        .get(1)?
+        .as_str()
+        .trim();
+    let lon_raw = re_lon
+        .captures(content)
+        .or_else(|| re_lon_tag.captures(content))?
+        .get(1)?
+        .as_str()
+        .trim();
+
+    let parse_xmp_coord = |val: &str, default_ref: &str| -> (String, String) {
+        let trimmed = val.trim();
+        let last_char = trimmed.chars().last().unwrap_or(' ');
+        let (num_part, ref_char) = if last_char.is_alphabetic() {
+            (
+                &trimmed[..trimmed.len() - last_char.len_utf8()],
+                last_char.to_uppercase().to_string(),
+            )
+        } else {
+            (trimmed, default_ref.to_string())
+        };
+
+        let parts: Vec<&str> = num_part.split(',').collect();
+        let deg = parts
+            .first()
+            .and_then(|p| p.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let min = parts
+            .get(1)
+            .and_then(|p| p.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let sec = parts
+            .get(2)
+            .and_then(|p| p.trim().parse::<f64>().ok())
+            .unwrap_or(0.0);
+
+        let total_deg = deg + min / 60.0 + sec / 3600.0;
+        (to_dms_string(total_deg), ref_char)
+    };
+
+    let (lat_str, lat_ref) = parse_xmp_coord(lat_raw, "N");
+    let (lon_str, lon_ref) = parse_xmp_coord(lon_raw, "E");
+
+    Some((lat_str, lat_ref, lon_str, lon_ref))
+}
+
 pub fn sync_metadata_from_xmp(source_path: &Path, metadata: &mut ImageMetadata) -> bool {
     let actual_xmp = resolve_xmp_path(source_path);
 
@@ -4243,6 +4484,19 @@ pub fn sync_metadata_from_xmp(source_path: &Path, metadata: &mut ImageMetadata) 
             metadata.tags = Some(current_tags);
             changed = true;
         }
+
+        let xmp_gps = extract_xmp_gps(&content);
+        if let Some((lat_s, lat_r, lon_s, lon_r)) = xmp_gps {
+            let mut exif_map = metadata.exif.clone().unwrap_or_default();
+            if !exif_map.contains_key("GPSLatitude") {
+                exif_map.insert("GPSLatitude".to_string(), lat_s);
+                exif_map.insert("GPSLatitudeRef".to_string(), lat_r);
+                exif_map.insert("GPSLongitude".to_string(), lon_s);
+                exif_map.insert("GPSLongitudeRef".to_string(), lon_r);
+                metadata.exif = Some(exif_map);
+                changed = true;
+            }
+        }
     }
     changed
 }
@@ -4268,7 +4522,8 @@ pub fn sync_metadata_to_xmp(source_path: &Path, metadata: &ImageMetadata, create
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
     xmlns:xmp="http://ns.adobe.com/xap/1.0/"
-    xmlns:dc="http://purl.org/dc/elements/1.1/">
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:exif="http://ns.adobe.com/exif/1.0/">
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>"#;
@@ -4361,6 +4616,190 @@ pub fn sync_metadata_to_xmp(source_path: &Path, metadata: &ImageMetadata, create
             }
         }
 
+        // Sync GPS coordinates
+        let gps_data = metadata.exif.as_ref().and_then(|exif| {
+            let lat = exif.get("GPSLatitude")?;
+            let lat_ref = exif
+                .get("GPSLatitudeRef")
+                .map(|s| s.as_str())
+                .unwrap_or("N");
+            let lon = exif.get("GPSLongitude")?;
+            let lon_ref = exif
+                .get("GPSLongitudeRef")
+                .map(|s| s.as_str())
+                .unwrap_or("E");
+            Some((
+                lat.clone(),
+                lat_ref.to_string(),
+                lon.clone(),
+                lon_ref.to_string(),
+            ))
+        });
+
+        let re_lat_attr = regex!(r#"exif:GPSLatitude\s*=\s*"[^"]*""#);
+        let re_lat_tag = regex!(r#"<exif:GPSLatitude\s*>[^<]*</exif:GPSLatitude>"#);
+        let re_lat_ref_attr = regex!(r#"exif:GPSLatitudeRef\s*=\s*"[^"]*""#);
+        let re_lat_ref_tag = regex!(r#"<exif:GPSLatitudeRef\s*>[^<]*</exif:GPSLatitudeRef>"#);
+        let re_lon_attr = regex!(r#"exif:GPSLongitude\s*=\s*"[^"]*""#);
+        let re_lon_tag = regex!(r#"<exif:GPSLongitude\s*>[^<]*</exif:GPSLongitude>"#);
+        let re_lon_ref_attr = regex!(r#"exif:GPSLongitudeRef\s*=\s*"[^"]*""#);
+        let re_lon_ref_tag = regex!(r#"<exif:GPSLongitudeRef\s*>[^<]*</exif:GPSLongitudeRef>"#);
+
+        if let Some((lat_val, lat_ref_val, lon_val, lon_ref_val)) = gps_data {
+            if !content.contains("xmlns:exif") {
+                if let Some(desc_idx) = content.find("<rdf:Description") {
+                    let insert_pos = desc_idx + "<rdf:Description".len();
+                    content.insert_str(
+                        insert_pos,
+                        "\n    xmlns:exif=\"http://ns.adobe.com/exif/1.0/\"",
+                    );
+                }
+            }
+
+            let format_for_xmp = |raw: &str, r: &str| -> String {
+                if let Some(deg_min_sec) = parse_gps_components(raw) {
+                    let min_total = deg_min_sec.1 + deg_min_sec.2 / 60.0;
+                    format!("{},{:.4}{}", deg_min_sec.0, min_total, r)
+                } else {
+                    format!("{}{}", raw.trim(), r)
+                }
+            };
+
+            let xmp_lat = format_for_xmp(&lat_val, &lat_ref_val);
+            let xmp_lon = format_for_xmp(&lon_val, &lon_ref_val);
+
+            if re_lat_attr.is_match(&content) {
+                content = re_lat_attr
+                    .replace(&content, format!("exif:GPSLatitude=\"{}\"", xmp_lat))
+                    .to_string();
+            } else if re_lat_tag.is_match(&content) {
+                content = re_lat_tag
+                    .replace(
+                        &content,
+                        format!("<exif:GPSLatitude>{}</exif:GPSLatitude>", xmp_lat),
+                    )
+                    .to_string();
+            } else if let Some(last_index) = content.rfind("</rdf:Description>") {
+                let (start, end) = content.split_at(last_index);
+                content = format!(
+                    "{} <exif:GPSLatitude>{}</exif:GPSLatitude>\n{}",
+                    start, xmp_lat, end
+                );
+            }
+
+            if re_lat_ref_attr.is_match(&content) {
+                content = re_lat_ref_attr
+                    .replace(
+                        &content,
+                        format!("exif:GPSLatitudeRef=\"{}\"", lat_ref_val),
+                    )
+                    .to_string();
+            } else if re_lat_ref_tag.is_match(&content) {
+                content = re_lat_ref_tag
+                    .replace(
+                        &content,
+                        format!("<exif:GPSLatitudeRef>{}</exif:GPSLatitudeRef>", lat_ref_val),
+                    )
+                    .to_string();
+            } else if let Some(last_index) = content.rfind("</rdf:Description>") {
+                let (start, end) = content.split_at(last_index);
+                content = format!(
+                    "{} <exif:GPSLatitudeRef>{}</exif:GPSLatitudeRef>\n{}",
+                    start, lat_ref_val, end
+                );
+            }
+
+            if re_lon_attr.is_match(&content) {
+                content = re_lon_attr
+                    .replace(&content, format!("exif:GPSLongitude=\"{}\"", xmp_lon))
+                    .to_string();
+            } else if re_lon_tag.is_match(&content) {
+                content = re_lon_tag
+                    .replace(
+                        &content,
+                        format!("<exif:GPSLongitude>{}</exif:GPSLongitude>", xmp_lon),
+                    )
+                    .to_string();
+            } else if let Some(last_index) = content.rfind("</rdf:Description>") {
+                let (start, end) = content.split_at(last_index);
+                content = format!(
+                    "{} <exif:GPSLongitude>{}</exif:GPSLongitude>\n{}",
+                    start, xmp_lon, end
+                );
+            }
+
+            if re_lon_ref_attr.is_match(&content) {
+                content = re_lon_ref_attr
+                    .replace(
+                        &content,
+                        format!("exif:GPSLongitudeRef=\"{}\"", lon_ref_val),
+                    )
+                    .to_string();
+            } else if re_lon_ref_tag.is_match(&content) {
+                content = re_lon_ref_tag
+                    .replace(
+                        &content,
+                        format!("<exif:GPSLongitudeRef>{}</exif:GPSLongitudeRef>", lon_ref_val),
+                    )
+                    .to_string();
+            } else if let Some(last_index) = content.rfind("</rdf:Description>") {
+                let (start, end) = content.split_at(last_index);
+                content = format!(
+                    "{} <exif:GPSLongitudeRef>{}</exif:GPSLongitudeRef>\n{}",
+                    start, lon_ref_val, end
+                );
+            }
+        } else {
+            content = re_lat_attr.replace_all(&content, "").to_string();
+            content = re_lat_tag.replace_all(&content, "").to_string();
+            content = re_lat_ref_attr.replace_all(&content, "").to_string();
+            content = re_lat_ref_tag.replace_all(&content, "").to_string();
+            content = re_lon_attr.replace_all(&content, "").to_string();
+            content = re_lon_tag.replace_all(&content, "").to_string();
+            content = re_lon_ref_attr.replace_all(&content, "").to_string();
+            content = re_lon_ref_tag.replace_all(&content, "").to_string();
+        }
+
         let _ = fs::write(&xmp_file, content);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_dms_string() {
+        let lat = 45.4642;
+        let dms = to_dms_string(lat);
+        assert!(dms.starts_with("45 deg 27 min"));
+
+        let components = parse_gps_components(&dms).unwrap();
+        assert_eq!(components.0, 45);
+        assert_eq!(components.1, 27.0);
+        let reconstructed = components.0 as f64 + components.1 / 60.0 + components.2 / 3600.0;
+        assert!((reconstructed - lat).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_extract_xmp_gps() {
+        let xmp_sample = r#"<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:exif="http://ns.adobe.com/exif/1.0/"
+    exif:GPSLatitude="45,27.8520N"
+    exif:GPSLongitude="9,11.2340E">
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>"#;
+
+        let result = extract_xmp_gps(xmp_sample);
+        assert!(result.is_some());
+        let (lat_s, lat_r, lon_s, lon_r) = result.unwrap();
+        assert_eq!(lat_r, "N");
+        assert_eq!(lon_r, "E");
+        assert!(lat_s.starts_with("45 deg 27 min"));
+        assert!(lon_s.starts_with("9 deg 11 min"));
     }
 }

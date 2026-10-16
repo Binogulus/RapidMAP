@@ -159,7 +159,7 @@ fn get_exif_from_rrcache(image_path: &Path) -> Option<HashMap<String, String>> {
     None
 }
 
-fn save_exif_to_rrcache(image_path: &Path, exif: HashMap<String, String>) {
+pub(crate) fn save_exif_to_rrcache(image_path: &Path, exif: HashMap<String, String>) {
     let Some(folder) = image_path.parent() else {
         return;
     };
@@ -1616,8 +1616,11 @@ pub fn read_rrexif_sidecar(image_path: &Path) -> Option<HashMap<String, String>>
 
 pub fn read_exif_data_from_bytes(path: &str, file_bytes: &[u8]) -> HashMap<String, String> {
     if is_raw_file(path)
-        && let Some(map) = extract_metadata(file_bytes)
+        && let Some(mut map) = extract_metadata(file_bytes)
     {
+        if map.contains_key("GPSLatitude") && map.contains_key("GPSLongitude") {
+            map.insert("HasNativeGPS".to_string(), "true".to_string());
+        }
         return map;
     }
 
@@ -1639,6 +1642,9 @@ pub fn read_exif_data_from_bytes(path: &str, file_bytes: &[u8]) -> HashMap<Strin
             };
             exif_data.insert(field.tag.to_string(), truncate_large_exif(&raw_val));
         }
+    }
+    if exif_data.contains_key("GPSLatitude") && exif_data.contains_key("GPSLongitude") {
+        exif_data.insert("HasNativeGPS".to_string(), "true".to_string());
     }
     exif_data
 }
