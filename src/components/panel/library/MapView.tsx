@@ -114,7 +114,7 @@ function getInitialDockWidth(): number {
     const saved = localStorage.getItem(MAP_DOCK_WIDTH_STORAGE_KEY);
     if (saved !== null) {
       const parsed = parseInt(saved, 10);
-      if (!isNaN(parsed) && parsed >= 180 && parsed <= 500) {
+      if (!isNaN(parsed) && parsed >= 160 && parsed <= 550) {
         return parsed;
       }
     }
@@ -1202,6 +1202,7 @@ interface UnlocatedPhotoCardProps {
   exif?: Record<string, string>;
   thumbUrl?: string;
   isSelected: boolean;
+  cardHeight: number;
   onSelect: (e: React.MouseEvent) => void;
   onDragStart: (e: React.DragEvent) => void;
   onRequestThumb: (path: string) => void;
@@ -1215,6 +1216,7 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
     exif,
     thumbUrl,
     isSelected,
+    cardHeight,
     onSelect,
     onDragStart,
     onRequestThumb,
@@ -1248,18 +1250,19 @@ const UnlocatedPhotoCard: React.FC<UnlocatedPhotoCardProps> = React.memo(
         draggable={true}
         onDragStart={onDragStart}
         onClick={onSelect}
+        style={{ width: '100%', height: cardHeight }}
         className={clsx(
-          'w-full aspect-square bg-surface rounded-md overflow-hidden cursor-grab active:cursor-grabbing group relative flex flex-col transition-all duration-150 transform-gpu shadow-sm hover:shadow-md select-none',
+          'shrink-0 bg-surface rounded-md overflow-hidden cursor-grab active:cursor-grabbing group relative flex flex-col transition-shadow duration-150 transform-gpu shadow-sm hover:shadow-md select-none',
           isSelected && 'ring-2 ring-accent z-10 shadow-md',
         )}
       >
         {/* Full Image Container with object-contain so the entire photo is shown without cropping */}
-        <div className="relative w-full flex-1 min-h-0 z-0 bg-surface transition-opacity duration-200">
+        <div className="relative w-full flex-1 min-h-0 z-0 bg-surface">
           {thumbUrl ? (
             <img
               src={thumbUrl}
               alt={filename}
-              className="w-full h-full object-contain transition-transform duration-300 will-change-transform relative group-hover:scale-[1.02] select-none pointer-events-none"
+              className="w-full h-full object-contain relative group-hover:scale-[1.02] select-none pointer-events-none"
               loading="lazy"
             />
           ) : (
@@ -1487,6 +1490,12 @@ export default function MapView(props: MapViewProps) {
   const requestedExifRef = useRef<Set<string>>(new Set());
   const mapRef = useRef<L.Map | null>(null);
   const isResizing = useRef(false);
+  const [isResizingState, setIsResizingState] = useState(false);
+  const dockWidthRef = useRef(dockWidth);
+
+  useEffect(() => {
+    dockWidthRef.current = dockWidth;
+  }, [dockWidth]);
   const thumbnails = useProcessStore((s) => s.thumbnails);
   const mediumThumbnails = useProcessStore((s) => s.mediumThumbnails);
   const { t } = useTranslation();
@@ -1536,21 +1545,25 @@ export default function MapView(props: MapViewProps) {
   const resize = useCallback((mouseMoveEvent: MouseEvent) => {
     if (!isResizing.current) return;
     const newWidth = window.innerWidth - mouseMoveEvent.clientX;
-    if (newWidth >= 180 && newWidth <= 500) {
+    if (newWidth >= 160 && newWidth <= 550) {
+      dockWidthRef.current = newWidth;
       setDockWidth(newWidth);
-      try {
-        localStorage.setItem(MAP_DOCK_WIDTH_STORAGE_KEY, String(newWidth));
-      } catch (e) {
-        console.error('Failed to save dock width to localStorage', e);
-      }
-      mapRef.current?.invalidateSize();
     }
   }, []);
 
   const stopResizing = useCallback(() => {
+    if (!isResizing.current) return;
     isResizing.current = false;
+    setIsResizingState(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
     document.removeEventListener('mousemove', resize);
     document.removeEventListener('mouseup', stopResizing);
+    try {
+      localStorage.setItem(MAP_DOCK_WIDTH_STORAGE_KEY, String(dockWidthRef.current));
+    } catch (e) {
+      console.error('Failed to save dock width to localStorage', e);
+    }
     mapRef.current?.invalidateSize();
   }, [resize]);
 
@@ -1558,6 +1571,9 @@ export default function MapView(props: MapViewProps) {
     (mouseDownEvent: React.MouseEvent) => {
       mouseDownEvent.preventDefault();
       isResizing.current = true;
+      setIsResizingState(true);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
       document.addEventListener('mousemove', resize);
       document.addEventListener('mouseup', stopResizing);
     },
@@ -1566,6 +1582,8 @@ export default function MapView(props: MapViewProps) {
 
   useEffect(() => {
     return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
       document.removeEventListener('mousemove', resize);
       document.removeEventListener('mouseup', stopResizing);
     };
@@ -2080,6 +2098,8 @@ export default function MapView(props: MapViewProps) {
 
   return (
     <div className="relative flex w-full h-full bg-bg-primary overflow-hidden select-none">
+      {/* Transparent overlay during dock drag to prevent event stealing and maintain cursor */}
+      {isResizingState && <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />}
       {/* Left Area: Map Canvas & Controls */}
       <div
         className="flex-1 h-full relative"
@@ -2191,16 +2211,16 @@ export default function MapView(props: MapViewProps) {
       {/* Right Dock for Unlocated Photos */}
       <div
         style={{ width: isDockOpen ? dockWidth : 0 }}
-        className={`relative shrink-0 border-l border-surface/50 bg-bg-secondary/70 backdrop-blur-md flex flex-col transition-[width] duration-200 ease-out z-[1000] ${
-          isDockOpen ? '' : 'overflow-hidden border-none'
-        }`}
+        className={`relative shrink-0 border-l border-surface/50 bg-bg-secondary/70 backdrop-blur-md flex flex-col ${
+          isResizingState ? '' : 'transition-[width] duration-200 ease-out'
+        } z-[1000] ${isDockOpen ? '' : 'overflow-hidden border-none'}`}
       >
         {isDockOpen && (
           <>
             {/* Left border resizer handle */}
             <div
               onMouseDown={startResizing}
-              className="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize hover:bg-accent/50 active:bg-accent transition-colors z-40"
+              className="absolute top-0 bottom-0 -left-1 w-2.5 cursor-col-resize hover:bg-accent/50 active:bg-accent transition-colors z-40"
               title={t('library.map.resizeDock', { defaultValue: 'Drag to resize' })}
             />
 
@@ -2268,6 +2288,7 @@ export default function MapView(props: MapViewProps) {
                   const filename = photo.path.split(/[\\/]/).pop() || '';
                   const timestamp = getImageTimestamp(photo, localExifMap[photo.path]);
                   const exif = localExifMap[photo.path] || photo.exif;
+                  const cardHeight = Math.max(120, dockWidth - 16);
 
                   return (
                     <UnlocatedPhotoCard
@@ -2278,6 +2299,7 @@ export default function MapView(props: MapViewProps) {
                       exif={exif}
                       thumbUrl={thumb}
                       isSelected={isSelected}
+                      cardHeight={cardHeight}
                       onSelect={(e) => handlePhotoSelect(photo.path, e)}
                       onDragStart={(e) => handlePhotoDragStart(photo, e)}
                       onRequestThumb={queueThumbnailRequest}
